@@ -1,191 +1,151 @@
-<![CDATA[<div align="center">
+# Jabarulin AI
 
-# 🌴 Jabarulin Project (Monorepo)
-
-### Sistem Rekomendasi Wisata Cerdas Jawa Barat
-**Berbasis NLP & Analisis Lalu Lintas**
-
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Node.js](https://img.shields.io/badge/Node.js-Express-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![Gemini](https://img.shields.io/badge/Gemini-LLM-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com/)
-
-**Capstone Project PJK-GM049** · Pijak × IBM SkillsBuild
-
-</div>
+**Sistem Rekomendasi Wisata Cerdas Berbasis NLP di Jawa Barat**  
+*Capstone Project PJK-GM049 — Kolaborasi Pijak × IBM SkillsBuild*
 
 ---
 
-## 📖 Tentang Project
+## Deskripsi Singkat
 
-**Jabarulin** adalah sistem rekomendasi wisata cerdas yang memungkinkan pengguna mencari destinasi wisata di **Jawa Barat** menggunakan **bahasa sehari-hari**.
+Jabarulin AI adalah sebuah sistem cerdas yang memecahkan masalah wisatawan dalam mencari destinasi spesifik di Jawa Barat menggunakan bahasa sehari-hari. Alih-alih menggunakan pencarian kata kunci yang kaku (seperti *"wisata alam bandung"*), pengguna dapat mengetik kalimat natural seperti *"pengen bawa keluarga liburan yang sepi dan dingin"*. 
 
-Proyek ini menggunakan arsitektur **Microservices** yang dibagi menjadi dua bagian utama di dalam satu repositori (Monorepo):
-
-1. **`1_AI_Service` (Python FastAPI):** Otak dari sistem. Memproses teks menggunakan IndoBERT dan TF-IDF untuk menghasilkan daftar rekomendasi mentah.
-2. **`2_Backend_Service` (Node.js Express):** Penengah antara Frontend dan AI. Memanggil AI Service, mengambil hasilnya, dan memprosesnya menggunakan **Gemini LLM** agar merespons layaknya seorang *tour guide*.
+Sistem ini bekerja dengan arsitektur **Hybrid AI Pipeline**:
+1. **Model AI Lokal (Python/FastAPI):** Menggunakan model **IndoBERT** hasil *fine-tuning* untuk mendeteksi *intent* (niat) dari kalimat pengguna, dipadukan dengan perhitungan **TF-IDF & Cosine Similarity** untuk mencari top destinasi dari dataset spesifik Jawa Barat.
+2. **Generative AI (Node.js/Express):** Hasil pencarian mentah dari AI lokal kemudian dikirimkan ke **Google Gemini LLM (gemini-2.5-flash)** untuk dirangkai menjadi balasan layaknya seorang pemandu wisata (*tour guide*) yang ramah, natural, dan interaktif.
 
 ---
 
-## 📁 Struktur Monorepo
+## Struktur Monorepo
 
-```
+Repository ini menggabungkan dua *service* utama (Microservices) ke dalam satu wadah:
+
+```text
 Jabarulin_Project/
-├── Model_AI/                 <-- (Kawasan Dhaffa - AI Engineer)
-│   ├── notebooks/                  # Catatan sejarah Jupyter Notebook
-│   │   └── model_training.ipynb    # Bukti otentik training model
+├── Model_AI/                 <-- (AI Service - Python)
+│   ├── notebooks/                  # Catatan sejarah Jupyter Notebook (proses training)
 │   ├── app.py                      # Script utama FastAPI (AI Engine)
-│   ├── dataset_final_jabarulin.csv # Dataset 358 baris
-│   ├── label_encoder.pkl           # Mapping intent
-│   ├── requirements.txt            # Dependensi Python
-│   └── Dockerfile                  # Konfigurasi container AI
+│   ├── dataset_final_jabarulin.csv # Dataset destinasi wisata
+│   ├── label_encoder.pkl           # Mapping model intent
+│   ├── requirements.txt            # Dependensi library Python
+│   └── Dockerfile                  # Konfigurasi Docker AI
 │
-├── Backend/                  <-- (Kawasan Mas Dwi - Backend Developer)
+├── Backend/                  <-- (Backend Service - Node.js)
 │   ├── controllers/
-│   │   └── recommendationController.js # Integrasi axios FastAPI + Gemini
+│   │   └── recommendationController.js # Logika penengah FastAPI & Gemini LLM
 │   ├── routes/
 │   │   └── apiRoutes.js            # Pengaturan rute Express
-│   ├── .env                        # File konfigurasi (GEMINI_API_KEY)
-│   ├── package.json                # Dependensi Node.js
+│   ├── package.json                # Dependensi library Node.js
 │   ├── server.js                   # Script utama Express
-│   └── Dockerfile                  # Konfigurasi container Backend
+│   └── Dockerfile                  # Konfigurasi Docker Backend
 │
-├── docker-compose.yml        <-- (Konduktor Docker)
-├── .gitignore
+├── docker-compose.yml        <-- (Konduktor Orkestrasi Docker)
 └── README.md
 ```
 
 ---
 
-## 🐳 Quick Start: Menggunakan Docker (Sangat Mudah!)
+## Cara Menggunakan (Mulai dari Nol)
 
-Cara paling profesional dan mudah untuk menjalankan seluruh proyek ini sekaligus adalah menggunakan **Docker Compose**. Kamu tidak perlu menginstal Python, Node.js, atau mengetik `pip install` sama sekali!
+Anda bisa menjalankan proyek ini menggunakan **Docker** (Sangat Disarankan) atau secara **Manual**.
 
-1. **Pastikan Docker Desktop sudah terinstal** dan berjalan di komputermu.
-2. Buka file `Backend/.env` dan masukkan `GEMINI_API_KEY` kamu.
-3. Buka terminal di **folder utama proyek** (yang ada file `docker-compose.yml`), lalu ketik:
-
-```bash
-docker-compose up --build
-```
-
-4. Tunggu beberapa menit untuk instalasi awal. Setelah selesai, semua sistem akan otomatis menyala:
-   - AI Service berjalan di: `http://localhost:8000`
-   - Backend Service berjalan di: `http://localhost:3000`
+### Persiapan Awal (Wajib)
+1. Lakukan `git clone` repository ini ke komputer Anda.
+2. Dapatkan API Key Gemini dari [Google AI Studio](https://aistudio.google.com/).
+3. Buat file bernama `.env` di dalam folder `Backend/` dan masukkan kode berikut:
+   ```env
+   GEMINI_API_KEY="masukkan_api_key_asli_anda_disini"
+   ```
 
 ---
 
-## ⚡ Quick Start: Cara Manual (Tanpa Docker)
+### OPSI 1: Menjalankan via Docker (Paling Mudah)
+Jika Anda memiliki **Docker Desktop** yang sudah terinstal, Anda tidak perlu menginstal Python atau Node.js secara manual.
 
-Jika kamu tidak menggunakan Docker, kamu harus menyalakan kedua *service* secara manual di dua terminal terpisah.
-
-### 1. Menyalakan AI Service (Python)
-
-AI Service harus dijalankan pertama kali karena Backend bergantung padanya.
-
-1. Buka terminal dan masuk ke folder `Model_AI`:
+1. Buka terminal di folder utama proyek (sejajar dengan file `docker-compose.yml`).
+2. Ketik perintah berikut:
    ```bash
-   cd Model_AI
+   docker-compose up --build
    ```
+3. Tunggu hingga proses *download* image dan library selesai. Sistem akan menyala otomatis!
+   - AI Service: `http://localhost:8000`
+   - Backend Service: `http://localhost:3000`
 
-2. (Opsional) Buat virtual environment:
-   ```bash
-   python -m venv env
-   env\Scripts\activate
-   ```
+---
 
-3. Install semua library NLP dan Machine Learning:
+### OPSI 2: Menjalankan Secara Manual (Tanpa Docker)
+Jika Anda tidak menggunakan Docker, Anda harus menyalakan kedua server di dua terminal yang berbeda.
+
+#### Terminal 1: Menyalakan Model AI (Python)
+1. Buka terminal, masuk ke folder `Model_AI`.
+2. (Opsional) Buat *virtual environment*: `python -m venv env` lalu aktifkan (`env\Scripts\activate` di Windows).
+3. Install library yang dibutuhkan:
    ```bash
    pip install -r requirements.txt
    ```
+4. Jalankan server FastAPI:
+   ```bash
+   python -m uvicorn app:app --host 0.0.0.0 --port 8000
+   ```
+   *(Catatan: Saat pertama kali dijalankan, sistem akan otomatis mengunduh file model IndoBERT sebesar ~500MB dari Hugging Face Hub `Dhaffa/jabarulin-indobert`. Pastikan internet stabil).*
 
-### 3. Jalankan Server (Otomatis Download Model)
+#### Terminal 2: Menyalakan Backend (Node.js)
+1. Buka terminal baru, masuk ke folder `Backend`.
+2. Install library yang dibutuhkan:
+   ```bash
+   npm install
+   ```
+3. Jalankan server Express:
+   ```bash
+   npm start
+   ```
 
-Gunakan command berikut:
+---
 
+## Uji Coba: Tahap Percobaan Input dan Output
+
+Setelah kedua server menyala, Anda bisa mensimulasikan permintaan pengguna (Input) menuju API Backend. Anda bisa menggunakan **Postman**, **cURL**, atau membuat kode Frontend sendiri.
+
+**Contoh Request (cURL):**
 ```bash
-python -m uvicorn app:app --host 0.0.0.0 --port 8000
+curl -X POST http://localhost:3000/api/recommend \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "pengen bawa keluarga liburan yang sepi dan dingin"}'
 ```
 
-> **Catatan:** Saat pertama kali dijalankan, sistem akan otomatis mengunduh model AI dari Hugging Face Hub (`Dhaffa/jabarulin-indobert`). Pastikan koneksi internetmu stabil.
-
-*AI Service berjalan di `http://localhost:8000`*
-
----
-
-### 2. Menyalakan Backend Service (Node.js)
-
-1. Buka terminal BARU dan masuk ke folder `Backend`:
-   ```bash
-   cd Backend
-   ```
-
-2. Buat file `.env` dan masukkan API Key Gemini kamu:
-   ```env
-   GEMINI_API_KEY="masukkan_api_key_kamu_disini"
-   ```
-
-3. Konfigurasi Environment:
-   Buka file `.env` dan masukkan API Key Gemini kamu:
-   ```env
-   GEMINI_API_KEY=AIzaSy...masukkan_api_key_disini
-   AI_SERVICE_URL=http://127.0.0.1:8000
-   PORT=3000
-   ```
-
-4. Jalankan server Express:
-   ```bash
-   npm run dev
-   ```
-   *Backend Service berjalan di `http://localhost:3000`*
-
----
-
-## 📡 API Endpoint (Untuk Frontend)
-
-Frontend (Mobile/Web) **hanya perlu menembak ke Backend Service (Node.js)**. 
-
-### ⭐ POST `/api/recommend`
-
-**URL:** `http://localhost:3000/api/recommend`
-
-**Request Body (JSON):**
-```json
-{
-  "prompt": "pengen ke pantai yang sepi buat healing"
-}
-```
-
-**Response dari Backend (Node.js + Gemini):**
+**Contoh Output (JSON):**
 ```json
 {
   "status": "success",
-  "reply": "Halo! Kalau kamu cari yang sepi buat healing, Pantai Cipanarikan cocok banget nih! Tempatnya sangat asri dan belum terlalu ramai wisatawan... \n[Google Maps](https://maps.google.com/...)",
+  "reply": "Wah, pengen bawa keluarga liburan yang sepi dan dingin ya? Ide yang bagus banget tuh! Pasti seru kalau bisa quality time bareng di tempat yang adem. Jabarulin punya rekomendasi yang pas:\n\n1. **Dusun Bambu**\nKalau cari suasana yang adem ayem dan dikelilingi hijaunya alam, ini juara banget! Udara pegunungannya bikin seger, cocok buat ngilangin penat.\n\n2. **Farmhouse Lembang**\nMasih di Lembang, tempat ini punya suasana pedesaan Eropa yang estetik. Anak-anak pasti suka berinteraksi dengan hewan lucu di udara yang dingin.\n\nSemoga liburan keluarganya berkesan ya!",
   "raw_data": [
     {
-      "name": "Pantai Cipanarikan",
-      "category": "pantai tersembunyi",
-      "rating": 4.6,
-      "google_maps_url": "..."
+      "name": "Dusun Bambu",
+      "category": "alam, keluarga",
+      "rating": 4.5,
+      "google_maps_url": null
+    },
+    {
+      "name": "Farmhouse Lembang",
+      "category": "keluarga, spot foto",
+      "rating": 4.5,
+      "google_maps_url": null
     }
   ]
 }
 ```
 
----
-
-## 👥 Tim
-
-**Capstone Project PJK-GM049** — Pijak × IBM SkillsBuild
-
-| Role | Nama | Kawasan Codebase |
-|------|-----------|-----------|
-| **AI & NLP Engineer** | Dhaffa | `1_AI_Service/` |
-| **Backend Developer** | Mas Dwi Saktya | `2_Backend_Service/` |
+> **Catatan Endpoint:**
+> - `reply`: Adalah teks natural yang dihasilkan oleh Gemini LLM untuk ditampilkan di antarmuka *Chatbot*.
+> - `raw_data`: Adalah data terstruktur dari AI Lokal (FastAPI) yang bisa Frontend manfaatkan untuk merender desain kartu UI (Card), Peta, atau List interaktif.
 
 ---
 
-## 📄 License
+## Tim Pengembang
 
-Capstone Project untuk keperluan akademis — Pijak × IBM SkillsBuild.
-]]>
+**Capstone Project PJK-GM049**
+
+| Role | Spesialisasi | Fokus Kerja |
+|---|---|---|
+| **Dhaffa** | AI / NLP Engineer | `Model_AI` (Dataset, IndoBERT, FastAPI) |
+| **Dwi Saktya** | Backend Developer | `Backend` (Node.js, Express, Gemini LLM) |
+| *(Tim Lain)* | *(Bisa ditambahkan di sini)* | *(UI/UX, Data Analyst, dll)* |
