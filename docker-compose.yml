@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. AI Service (Python FastAPI)
+  # ==========================================
+  ai-service:
+    build: 
+      context: ./Model_AI
+    container_name: jabarulin-ai-service
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - jabarulin-network
+
+  # ==========================================
+  # 2. Backend Service (Node.js Express)
+  # ==========================================
+  backend-service:
+    build: 
+      context: ./Backend
+    container_name: jabarulin-backend-service
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./Backend/.env
+    environment:
+      # Memaksa backend menembak AI Service melalui internal docker network
+      - AI_SERVICE_URL=http://ai-service:8000
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+    networks:
+      - jabarulin-network
+
+# ==========================================
+# Network Internal Docker
+# ==========================================
+networks:
+  jabarulin-network:
+    driver: bridge
