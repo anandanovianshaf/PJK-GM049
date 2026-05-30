@@ -143,9 +143,3 @@ curl -X POST http://localhost:3000/api/recommend \
 ## Tim Pengembang
 
 **Capstone Project PJK-GM049**
-
-| Role | Spesialisasi | Fokus Kerja |
-|---|---|---|
-| **Dhaffa** | AI / NLP Engineer | `Model_AI` (Dataset, IndoBERT, FastAPI) |
-| **Dwi Saktya** | Backend Developer | `Backend` (Node.js, Express, Gemini LLM) |
-| *(Tim Lain)* | *(Bisa ditambahkan di sini)* | *(UI/UX, Data Analyst, dll)* |
