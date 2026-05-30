@@ -143,3 +143,13 @@ curl -X POST http://localhost:3000/api/recommend \
 ## Tim Pengembang
 
 **Capstone Project PJK-GM049**
+
+| Nama |
+|------|
+| Adithya Raihan Pratama |
+| Aldy Permana |
+| Ananda Novianshaf |
+| Dhaffa Zikrullah Ramadhan |
+| Dwi Saktya Hari Aditya |
+
+Terima kasih kepada seluruh anggota tim yang telah berkontribusi dalam pengembangan proyek ini.
