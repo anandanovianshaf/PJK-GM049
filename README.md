@@ -21,36 +21,64 @@ Repository ini menggabungkan dua *service* utama (Microservices) ke dalam satu w
 
 ```text
 Jabarulin_Project/
-├── jabarulin-frontend/       <-- (Frontend Service - Next.js)
-│   ├── public/                     # Aset statis & gambar wisata terfavorit
-│   ├── src/
-│   │   ├── app/                    # Routing utama Next.js (App Router) & CSS Global
-│   │   ├── components/             # Komponen UI (Navbar, Hero, ChatBot, dll)
-│   │   └── lib/                    # Helper integrasi API (API Service)
-│   ├── package.json                # Dependensi library React & Next.js
-│   ├── next.config.ts              # Konfigurasi routing & API proxy
-│   └── tsconfig.json               # Konfigurasi TypeScript compiler
 │
-├── Model_AI/                 <-- (AI Service - Python)
-│   ├── notebooks/                  # Catatan sejarah Jupyter Notebook (proses training)
-│   ├── app.py                      # Script utama FastAPI (AI Engine)
-│   ├── dataset_final_jabarulin.csv # Dataset destinasi wisata
-│   ├── label_encoder.pkl           # Mapping model intent
-│   ├── requirements.txt            # Dependensi library Python
-│   └── Dockerfile                  # Konfigurasi Docker AI
+├── Model_AI/
+│   ├── notebooks/
+│   ├── app.py
+│   ├── dataset_final_jabarulin.csv
+│   ├── label_encoder.pkl
+│   ├── requirements.txt
+│   └── Dockerfile
 │
-├── Backend/                  <-- (Backend Service - Node.js)
+├── Backend/
 │   ├── controllers/
-│   │   └── recommendationController.js # Logika penengah FastAPI & Gemini LLM
+│   │   └── recommendationController.js
 │   ├── routes/
-│   │   └── apiRoutes.js            # Pengaturan rute Express
-│   ├── package.json                # Dependensi library Node.js
-│   ├── server.js                   # Script utama Express
-│   └── Dockerfile                  # Konfigurasi Docker Backend
+│   │   └── apiRoutes.js
+│   ├── services/
+│   │   ├── aiService.js
+│   │   └── geminiService.js
+│   ├── middleware/
+│   ├── package.json
+│   ├── server.js
+│   └── Dockerfile
 │
-├── docker-compose.yml        <-- (Konduktor Orkestrasi Docker)
+├── jabarulin-frontend/
+│   ├── public/
+│   │   ├── images/
+│   │   └── icons/
+│   │
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── page.tsx
+│   │   │   ├── layout.tsx
+│   │   │   └── globals.css
+│   │   │
+│   │   ├── components/
+│   │   │   ├── Navbar.tsx
+│   │   │   ├── Hero.tsx
+│   │   │   ├── DestinationCard.tsx
+│   │   │   ├── ChatBot.tsx
+│   │   │   └── Footer.tsx
+│   │   │
+│   │   ├── lib/
+│   │   │   └── api.ts
+│   │   │
+│   │   ├── hooks/
+│   │   ├── types/
+│   │   └── styles/
+│   │
+│   ├── package.json
+│   ├── next.config.ts
+│   ├── tsconfig.json
+│   └── Dockerfile
+│
+├── docker-compose.yml
+├── .env
+├── .gitignore
 └── README.md
 ```
+
 
 ---
 
