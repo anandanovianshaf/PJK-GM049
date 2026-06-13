@@ -1,107 +1,134 @@
 # Jabarulin AI
 
 **Sistem Rekomendasi Wisata Cerdas Berbasis NLP di Jawa Barat**  
-*Resource-Based Semantic Search + Hybrid Ranking + Negation Filtering*  
+*Fine-Tuned IndoBERT Classifiers + TF-IDF Semantic Search + Multi-Stage Hybrid Ranking + Region & Negation Filtering*  
 *Capstone Project PJK-GM049 — Kolaborasi Pijak × IBM SkillsBuild*
 
 ---
 
 ## Deskripsi Singkat
 
-Jabarulin AI adalah sebuah sistem cerdas yang memecahkan masalah wisatawan dalam mencari destinasi spesifik di Jawa Barat menggunakan bahasa sehari-hari. Alih-alih menggunakan pencarian kata kunci yang kaku (seperti *"wisata alam bandung"*), pengguna dapat mengetik kalimat natural yang kompleks seperti *"pengen bawa keluarga liburan yang sepi dan dingin tapi ga mau di gunung"*. 
+Jabarulin AI adalah sebuah sistem cerdas yang memecahkan masalah wisatawan dalam mencari destinasi spesifik di Jawa Barat menggunakan bahasa sehari-hari. Berbeda dengan pencarian konvensional yang kaku, sistem ini menggunakan pendekatan terpadu dua tahap (*guided recommendation*) dan memproses query secara semantik menggunakan kecerdasan buatan berbasis model bahasa **IndoBERT** yang di-fine-tune.
 
-Sistem ini bekerja dengan arsitektur **Hybrid AI Pipeline v2.0**:
-1. **Model AI Lokal (Python/FastAPI):**
-   - **Semantic Review-Based Recommendation:** Menggunakan model **SentenceTransformer** (`paraphrase-multilingual-MiniLM-L12-v2`) secara lokal untuk memetakan kebutuhan pengguna ke corpus ulasan riil pengunjung (*knowledge base* ulasan wisata). Hal ini memungkinkan AI memahami nuansa pengalaman pengunjung dibanding sekadar kategori kaku.
-   - **Negation Detection & Post-Filtering:** Mendeteksi preferensi negatif secara dinamis (seperti *"tidak mau gunung"*, *"selain pantai"*, *"males camping"*) dari query pengguna, lalu menyaring destinasi terkait sebelum memberikan hasil akhir.
-   - **Hybrid Ranking:** Menentukan destinasi terbaik menggunakan formula skor tertimbang: **75% keselarasan semantik (review)** + **15% rating destinasi** + **10% popularitas (jumlah total ulasan)**.
-   - **Academic Classifier (TF-IDF + Logistic Regression):** Digunakan sebagai pemenuhan kebutuhan akademis untuk mengklasifikasikan kelompok kategori utama (*intent*) dari teks pencarian pengguna lengkap dengan *confidence scores*.
-2. **Generative AI (Node.js/Express):** Hasil destinasi rekomendasi teratas beserta ulasan-ulasan riilnya kemudian diteruskan ke **Google Gemini LLM (gemini-2.5-flash)**. Gemini bertindak sebagai pemandu wisata cerdas (*tour guide*) yang ramah, santai, dan asyik dengan mensintesis jawaban berbasis data tanpa halusinasi, mengutip ulasan riil pengunjung secara natural, serta melampirkan Google Maps dan website resmi destinasi.
+---
+
+## 🤖 Spesifikasi Model AI & Alur Input
+
+### 1. Model AI yang Digunakan (IndoBERT Hybrid)
+Sistem ini bermigrasi sepenuhnya ke arsitektur **Hybrid AI Pipeline v3.0** berbasis model deep learning **IndoBERT**:
+* **Base Model:** `indobenchmark/indobert-base-p1` (di-fine-tune secara khusus untuk klasifikasi preferensi pariwisata Jawa Barat).
+* **Lokasi Penyimpanan Model:** Dihosting di Hugging Face Hub **[Dhaffa/jabarulin-indobert-recommendation](https://huggingface.co/Dhaffa/jabarulin-indobert-recommendation)**. Sistem secara otomatis mengunduh weights model (~500MB) saat pertama kali dijalankan (baik via Docker maupun lokal) untuk menghindari penyimpanan file berukuran besar di repositori Git.
+* **Arsitektur Hybrid Scoring:**
+  * **IndoBERT Classifier (20%):** Memprediksi probabilitas intent kategori pariwisata (`preference_match`) dari input teks pengguna.
+  * **Semantic Search (50%):** Menggabungkan **40% TF-IDF Cosine Similarity** (untuk pencarian kata kunci yang presisi) dan **30% IndoBERT Mean-Pooled Embeddings** (untuk menangkap kesamaan makna semantik secara mendalam).
+  * **Category Match (15%):** Kecocokan kategori utama yang dipilih pengguna pada Tahap 1 dengan destinasi wisata.
+  * **Rating Score (10%) & Popularity Score (5%):** Bobot tambahan berdasarkan rating rata-rata Google Maps dan jumlah ulasan untuk memastikan rekomendasi berkualitas tinggi.
+* **Post-Filtering:**
+  * **Normalisasi Query:** Secara otomatis membersihkan slang, singkatan, dan typo Bahasa Indonesia (misal: *"gw mau hiling yg adem"* diubah menjadi *"saya mau healing yang dingin"*).
+  * **Filter Negasi:** Mengabaikan objek wisata dari kelompok yang ditolak pengguna secara dinamis (seperti *"tidak mau gunung"*, *"jangan pantai"*).
+  * **Filter Lokasi:** Otomatis menyaring dan membatasi daerah pencarian jika pengguna menyebutkan wilayah spesifik di Jawa Barat (seperti *"di Garut"*, *"di Bandung"*).
+
+### 2. Alur Input Pengguna (2 Tahap)
+Untuk menghasilkan rekomendasi yang akurat dan relevan, sistem menerapkan **Mekanisme Input Dua Tahap** pada antarmuka pengguna:
+
+```mermaid
+graph TD
+    A[Pengguna] --> B[Tahap 1: Pilih Kategori Utama]
+    B --> C[Wisata Alam / Pantai / Camping / Keluarga / Adventure / Fotografi / Healing / Lainnya]
+    C --> D[Tahap 2: Input Preferensi Bebas]
+    D --> E[Contoh: 'Pengen liburan yang dingin tapi ga mau di gunung']
+    E --> F[Kirim Request ke API /api/recommend]
+```
+
+* **Tahap 1: Pemilihan Kategori Wisata (Guided Selection)**
+  Pengguna memilih satu kategori utama dari opsi yang disediakan:
+  | Kategori | Cakupan/Deskripsi Destinasi |
+  | :--- | :--- |
+  | **Wisata Alam** | Air Terjun, Danau, Cagar Alam, Bukit |
+  | **Pantai** | Pantai, Pantai Umum, Pesisir Laut |
+  | **Camping** | Bumi Perkemahan, Kabin Perkemahan, Glamping |
+  | **Keluarga** | Kebun Binatang, Kolam Renang, Taman Rekreasi Air, Taman Bermain |
+  | **Adventure** | Rafting, Offroad, Gunung Berapi, Puncak Gunung, Area Mendaki |
+  | **Fotografi** | Titik Pemandangan, Bangunan Bersejarah |
+  | **Healing** | Pemandian Air Panas, Spa, Hotel Resor, Pemandian Terbuka |
+  | **Lainnya** | Hotel, Produsen Makanan, Pembangkit Listrik, Event Organizer, dsb. |
+
+* **Tahap 2: Input Preferensi Tambahan (Natural Language Prompt)**
+  Pengguna menuliskan query bebas dalam bahasa alami/sehari-hari untuk merinci preferensi mereka (seperti suhu udara, keramaian, atau pengecualian tertentu).
+
+* **Integrasi Generative AI (Google Gemini LLM):**
+  Setelah AI lokal (FastAPI) memproses input dua tahap tersebut dan menyaring 3 destinasi terbaik dari dataset, hasilnya dikirim ke **Google Gemini (gemini-2.5-flash)** di backend Node.js untuk dirakit menjadi tanggapan interaktif, santai, dan bersahabat kepada pengguna beserta tautan Google Maps.
 
 ---
 
 ## Struktur Monorepo
 
-Repository ini menggabungkan dua *service* utama (Microservices) ke dalam satu wadah:
+Repository ini telah dirancang agar bebas dari penyimpanan model berukuran besar di Git (menggunakan Hugging Face Hub untuk model hosting):
 
 ```text
 Jabarulin_Project/
 ├── Model_AI/                      <-- (AI Service - Python)
-│   ├── notebooks/                 # Catatan sejarah Jupyter Notebook (proses training)
-│   ├── sbert_model/               # Model SentenceTransformer lokal (MiniLM)
-│   ├── app.py                     # Script utama FastAPI (AI Engine)
-│   ├── processed_dataset.csv      # Dataset pariwisata Jawa Barat terproses
-│   ├── review_embeddings.pkl      # Embeddings review untuk Semantic Search
-│   ├── tfidf_vectorizer.pkl       # Vectorizer TF-IDF untuk model akademik
-│   ├── logistic_regression_model.pkl # Model ML Logistic Regression (Intent Classifier)
-│   ├── label_encoder_category.pkl # Encoder label kategori wisata
-│   ├── reviews_scaler.pkl         # Scaler ulasan untuk normalisasi popularitas
-│   ├── requirements.txt           # Dependensi library Python (PyTorch CPU, SBERT, dll)
+│   ├── notebooks/                 # Notebook pelatihan (jabarulin_indobert_recommendation.ipynb)
+│   ├── app.py                     # Script utama FastAPI (AI Engine dengan HF model loading)
+│   ├── data wisata jawabarat.xlsx # Dataset asli pariwisata Jawa Barat
+│   ├── requirements.txt           # Dependensi Python (PyTorch, Transformers, dll)
 │   └── Dockerfile                 # Konfigurasi Docker AI
 │
 ├── Backend/                       <-- (Backend Service - Node.js)
 │   ├── controllers/
-│   │   └── recommendationController.js # Logika penengah FastAPI & Gemini LLM
+│   │   └── recommendationController.js # Integrasi FastAPI & Gemini LLM
 │   ├── routes/
 │   │   └── apiRoutes.js            # Pengaturan rute Express
-│   ├── package.json                # Dependensi library Node.js
+│   ├── package.json                # Dependensi Backend
 │   ├── server.js                   # Script utama Express
 │   └── Dockerfile                  # Konfigurasi Docker Backend
 │
 ├── docker-compose.yml             <-- (Konduktor Orkestrasi Docker)
-└── README.md
+└── .gitignore                     # Mengabaikan model lokal besar
 ```
+
+> **Catatan Model ML:** Folder `Model_AI/indobert_classifier/` yang berisi file model besar (~500MB) diabaikan oleh git. Saat dijalankan pertama kali di Docker atau local tanpa folder tersebut, aplikasi secara otomatis mengunduh file model (`model.safetensors`, `config.json`, `label_encoder.pkl`, `tourism_embeddings.pkl`, dll.) dari Hugging Face repository **[Dhaffa/jabarulin-indobert-recommendation](https://huggingface.co/Dhaffa/jabarulin-indobert-recommendation)**.
 
 ---
 
 ## Cara Menggunakan (Mulai dari Nol)
 
-Anda bisa menjalankan proyek ini menggunakan **Docker** (Sangat Disarankan) atau secara **Manual**.
-
-### ⚙️ Persiapan Awal & Konfigurasi `.env` (Wajib)
-Sebelum menjalankan aplikasi, Anda wajib mengatur *environment variables*.
-
+### ⚙️ Persiapan Awal & Konfigurasi `.env`
 1. Lakukan `git clone` repository ini ke komputer Anda.
 2. Dapatkan API Key Gemini dari [Google AI Studio](https://aistudio.google.com/).
-3. Masuk ke dalam folder `Backend/`, Anda akan melihat file bernama `.env.example`.
-4. Duplikat atau *copy* file `.env.example` tersebut, lalu ubah namanya menjadi `.env`.
-5. Buka file `.env` tersebut dan isi variabel `GEMINI_API_KEY` dengan API Key milik Anda.
+3. Masuk ke folder `Backend/`, copy `.env.example` menjadi `.env`.
+4. Isi variabel `GEMINI_API_KEY` dengan API Key milik Anda.
+5. (Opsional) Jika repositori Hugging Face bersifat private, tambahkan variabel `HF_TOKEN=token_anda` pada file `.env` tersebut.
 
 ---
 
-### OPSI 1: Menjalankan via Docker (Paling Mudah)
-Jika Anda memiliki **Docker Desktop** yang sudah terinstal, Anda tidak perlu menginstal Python atau Node.js secara manual.
-
-1. Buka terminal di folder utama proyek (sejajar dengan file `docker-compose.yml`).
-2. Ketik perintah berikut:
+### OPSI 1: Menjalankan via Docker (Direkomendasikan)
+1. Jalankan perintah berikut di direktori utama:
    ```bash
    docker-compose up --build
    ```
-3. Tunggu hingga proses *build* image selesai. Sistem akan menyala otomatis!
-   - AI Service: `http://localhost:8000`
-   - Backend Service: `http://localhost:5000`
+2. Tunggu hingga proses build selesai. Sistem akan otomatis mendownload model dari Hugging Face Hub dan menyalakan container:
+   - Backend Service berjalan di: `http://localhost:5000`
+   - AI Service berjalan di: `http://localhost:8000`
 
 ---
 
 ### OPSI 2: Menjalankan Secara Manual (Tanpa Docker)
-Jika Anda tidak menggunakan Docker, Anda harus menyalakan kedua server di dua terminal yang berbeda.
 
-#### Terminal 1: Menyalakan Model AI (Python)
-1. Buka terminal, masuk ke folder `Model_AI`.
-2. (Opsional) Buat *virtual environment*: `python -m venv env` lalu aktifkan (`env\Scripts\activate` di Windows atau `source env/bin/activate` di macOS/Linux).
-3. Install library yang dibutuhkan:
+#### Terminal 1: AI Service (Python FastAPI)
+1. Masuk ke folder `Model_AI` dan buat virtual environment.
+2. Install dependensi:
    ```bash
    pip install -r requirements.txt
    ```
-4. Jalankan server FastAPI:
+3. Jalankan server FastAPI:
    ```bash
-   python -m uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+   python app.py
    ```
-   *(Catatan: Server FastAPI memuat model SentenceTransformer secara langsung dari folder lokal 'sbert_model/' dan embeddings ulasan dari 'review_embeddings.pkl', sehingga tidak memerlukan unduhan eksternal besar saat startup).*
 
-#### Terminal 2: Menyalakan Backend (Node.js)
-1. Buka terminal baru, masuk ke folder `Backend`.
-2. Install library yang dibutuhkan:
+#### Terminal 2: Backend Service (Node.js)
+1. Masuk ke folder `Backend`.
+2. Install dependensi:
    ```bash
    npm install
    ```
@@ -112,95 +139,87 @@ Jika Anda tidak menggunakan Docker, Anda harus menyalakan kedua server di dua te
 
 ---
 
-## 🌐 Daftar URL yang Bisa Diakses
-
-Setelah server berjalan dengan sukses, Anda dapat mengakses beberapa URL atau endpoint berikut melalui browser atau API Client (seperti Postman):
+## 🌐 Daftar URL & Endpoint
 
 ### 1. Backend Service (Node.js) — Port 5000
-- **Health Check:** [http://localhost:5000/health](http://localhost:5000/health)
-- **API Rekomendasi (Hybrid AI + Gemini):** `POST http://localhost:5000/api/recommend`
-  - *Payload (JSON):* `{"prompt": "kalimat pencarian", "top_n": 3}` (Catatan: controller backend saat ini meminta 3 rekomendasi teratas dari AI lokal).
+- **API Rekomendasi (Node.js -> AI Lokal -> Gemini):** `POST http://localhost:5000/api/recommend`
+  - *Payload (JSON):*
+    ```json
+    {
+      "category": "Camping",
+      "prompt": "Pengen liburan yang dingin tapi ga mau di gunung"
+    }
+    ```
 
-### 2. AI Service (Python FastAPI) — Port 8000
-- **Swagger UI (Dokumentasi Interaktif API):** [http://localhost:8000/docs](http://localhost:8000/docs) *(Sangat disarankan untuk melakukan testing secara langsung)*
-- **Root Info:** [http://localhost:8000/api/](http://localhost:8000/api/)
-- **Health Check:** [http://localhost:8000/api/health](http://localhost:8000/api/health)
+### 2. AI Service (FastAPI) — Port 8000
+- **Dokumentasi Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **API Rekomendasi (Lokal AI saja):** `POST http://localhost:8000/api/recommend`
-  - *Payload (JSON):* `{"query": "kalimat pencarian", "top_n": 5}`
-- **Prediksi Intent Teks (Academic):** `POST http://localhost:8000/api/predict-intent`
-  - *Payload (JSON):* `{"query": "kalimat pencarian"}`
-- **Daftar Kategori Wisata:** [http://localhost:8000/api/categories](http://localhost:8000/api/categories)
-- **Daftar Intent:** [http://localhost:8000/api/intents](http://localhost:8000/api/intents)
+  - *Payload (JSON):*
+    ```json
+    {
+      "category": "Camping",
+      "query": "Pengen liburan yang dingin tapi ga mau di gunung",
+      "top_n": 3
+    }
+    ```
 
 ---
 
-## 🧪 Uji Coba: Tahap Percobaan Input dan Output
+## 🧪 Uji Coba Input & Output (Postman / cURL)
 
-Setelah kedua server menyala, Anda bisa mensimulasikan permintaan pengguna (Input) menuju API Backend. Anda bisa menggunakan **Postman**, **cURL**, atau membuat kode Frontend sendiri.
+**Request Body (JSON):**
+```json
+{
+  "category": "Camping",
+  "prompt": "Pengen liburan yang dingin tapi ga mau di gunung"
+}
+```
 
-**Contoh Request (Postman):**
-1. Buka aplikasi **Postman**.
-2. Buat *request* baru dan ubah *method* menjadi **POST**.
-3. Masukkan URL: `http://localhost:5000/api/recommend` *(Pastikan port menggunakan 5000)*.
-4. Pilih tab **Headers**, lalu tambahkan:
-   - **Key**: `Content-Type`
-   - **Value**: `application/json`
-5. Pilih tab **Body**, klik **raw**, dan pastikan formatnya **JSON**.
-6. Masukkan data berikut ke dalam kolom teks (menguji fitur rekomendasi, deteksi negasi, dan hybrid ranking):
-   ```json
-   {
-     "prompt": "pengen bawa keluarga liburan yang sepi dan dingin tapi ga mau di gunung"
-   }
-   ```
-7. Klik tombol **Send**.
-
-**Contoh Output (JSON):**
+**Response Body (JSON):**
 ```json
 {
   "status": "success",
-  "reply": "Wah, seru sekali rencana liburannya! Mau membawa keluarga ke tempat yang sepi, adem, dan dingin tapi bukan daerah pegunungan tinggi ya? Tenang saja, Jabarulin punya beberapa rekomendasi yang pas banget:\n\n1. **Situ Patenggang**\nDanau yang sejuk di daerah perkebunan teh yang adem dan berkabut, cocok banget buat bersantai bareng keluarga tanpa harus trekking mendaki gunung. Kata pengunjung di sana: *\"Pemandangannya indah sekali, udaranya dingin berkabut menenangkan.\"*\nKamu bisa membuka lokasinya di sini: [Buka di Google Maps](https://maps.google.com/maps?q=Situ+Patenggang).\n\n2. **Ranca Upas**\nTempat di dataran tinggi yang asri dengan fasilitas camping keluarga dan penangkaran rusa. Udaranya sangat dingin kalau malam hari, tapi aksesnya datar dan ramah anak. Kata pengunjung di sana: *\"Bagus buat anak-anak memberi makan rusa, tempatnya dingin saat malam.\"*\nKamu bisa membuka lokasinya di sini: [Buka di Google Maps](https://maps.google.com/maps?q=Ranca+Upas).\n\nSemoga liburan keluarganya menyenangkan dan menenangkan ya!",
+  "reply": "Halo wargi! Pengen liburan sejuk tapi males nanjak gunung yang melelahkan? Pas banget! Jabarulin punya beberapa rekomendasi tempat camping berudara dingin di dataran rendah yang pastinya nyaman dan tanpa harus mendaki puncak gunung:\n\n1. **Bukit Cita Cita Camping Ground**\nLokasinya berada di kawasan Puncak, Bogor yang udaranya sudah terjamin sangat dingin dan sejuk. Tempatnya asri dan menyuguhkan pemandangan perkebunan teh. Sangat cocok untuk mendirikan tenda dan bersantai.\n*Rating:* 4.5/5 \n[Buka di Google Maps](https://www.google.com/maps/place/...)\n\n2. **Bumi Perkemahan Batu Kuda Manglayang**\nTerletak di kaki gunung Manglayang Bandung. Kamu bisa merasakan camping sejuk di tengah hutan pinus yang tenang tanpa perlu mendaki ke puncak gunungnya. Toilet dan fasilitas warung makan di sini cukup lengkap.\n*Rating:* 4.6/5\n[Buka di Google Maps](https://www.google.com/maps/place/...)\n\nSemoga liburan camping adem kamu menyenangkan!",
   "raw_data": [
     {
-      "name": "Situ Patenggang",
-      "category": "alam, keluarga",
-      "intent_label": "alam",
-      "address": "Ciwidey, Bandung, Jawa Barat",
-      "phone": null,
-      "website": "http://situpatenggang.com",
+      "name": "Bukit Cita Cita Camping Ground",
+      "category": "bumi perkemahan",
+      "intent_label": "camping",
+      "address": "citamiang jl raya puncak tugu utara kec cisarua kabupaten bogor jawa barat 16750",
+      "phone": "0822 9992 9869",
+      "website": "https://www.instagram.com/real...",
       "rating": 4.5,
-      "total_reviews": 4820,
-      "google_maps_url": "https://maps.google.com/maps?q=Situ+Patenggang",
-      "similarity_score": 0.584,
-      "final_score": 0.621,
+      "total_reviews": 864,
+      "google_maps_url": "https://www.google.com/maps/place/...",
+      "similarity_score": 0.311,
+      "final_score": 0.434,
       "reviews": [
-        "Pemandangannya indah sekali, udaranya dingin berkabut menenangkan.",
-        "Sangat recommended untuk dikunjungi bersama seluruh anggota keluarga."
-      ]
+        "pengalaman pertama kesini agak kurang mengenakan tendanya belum ready..."
+      ],
+      "preference_match": 0.042,
+      "category_match": 1.0
     },
     {
-      "name": "Ranca Upas",
-      "category": "alam, camping",
+      "name": "Bumi Perkemahan Batu Kuda Manglayang",
+      "category": "bumi perkemahan",
       "intent_label": "camping",
-      "address": "Ranca Upas, Ciwidey, Bandung, Jawa Barat",
-      "phone": "08123456789",
-      "website": null,
-      "rating": 4.5,
-      "total_reviews": 12500,
-      "google_maps_url": "https://maps.google.com/maps?q=Ranca+Upas",
-      "similarity_score": 0.521,
-      "final_score": 0.598,
+      "address": "4p4w r5m cikoneng satu cibiru wetan kec cileunyi kabupaten bandung jawa barat 40625",
+      "phone": "tidak tersedia",
+      "website": "tidak tersedia",
+      "rating": 4.6,
+      "total_reviews": 3699,
+      "google_maps_url": "https://www.google.com/maps/place/...",
+      "similarity_score": 0.291,
+      "final_score": 0.433,
       "reviews": [
-        "Bagus buat anak-anak memberi makan rusa, tempatnya dingin saat malam.",
-        "Tempat camping paling asri di daerah Ciwidey."
-      ]
+        "tempatnya luas banget buat camp yang lengkap sama toiletnya ada banyak..."
+      ],
+      "preference_match": 0.042,
+      "category_match": 1.0
     }
   ]
 }
 ```
-
-> **Catatan Endpoint:**
-> - `reply`: Adalah teks pemandu wisata natural yang dihasilkan oleh Gemini LLM untuk ditampilkan langsung di antarmuka *Chatbot* pengguna.
-> - `raw_data`: Adalah data terstruktur hasil penyaringan dan peringkat dari AI Lokal (FastAPI) yang dikirim agar Frontend dapat merender desain kartu UI (Card), peta lokasi, galeri, nomor telepon, maupun ulasan riil secara dinamis.
 
 ---
 
