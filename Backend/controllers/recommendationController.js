@@ -11,15 +11,17 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://127.0.0.1:8000";
 async function getJabarulinRecommendation(req, res) {
     try {
         const userPrompt = req.body.prompt; // Input dari user
+        const category = req.body.category; // Input category (optional)
         
         if (!userPrompt) {
             return res.status(400).json({ error: "Parameter 'prompt' wajib dikirimkan." });
         }
 
-        console.log(`[AI-Lokal] Meminta rekomendasi untuk: "${userPrompt}"`);
+        console.log(`[AI-Lokal] Meminta rekomendasi untuk category: "${category || 'Auto'}", prompt: "${userPrompt}"`);
 
         // 1. PANGGIL LOKAL AI (Python FastAPI buatan Dhaffa)
         const localAiResponse = await axios.post(`${AI_SERVICE_URL}/api/recommend`, {
+            category: category,
             query: userPrompt,
             top_n: 3
         });

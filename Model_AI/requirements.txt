@@ -1,10 +1,14 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-fastapi
-uvicorn
+transformers
+datasets
+torch
+scikit-learn
+openpyxl
 pandas
 numpy
-torch
-sentence-transformers
-scikit-learn
+matplotlib
+seaborn
+fastapi
+uvicorn
 pydantic
-python-multipart
+jinja2
+sentencepiece

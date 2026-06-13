@@ -1,12 +1,12 @@
 """
 ==========================================================
-  JABARULIN AI — FastAPI Backend Server
+  JABARULIN AI — FastAPI Backend Server (IndoBERT v3.0)
   Sistem Rekomendasi Wisata Cerdas Jawa Barat
   
   Hybrid Architecture:
-  Semantic Review-Based Recommendation (SentenceTransformer)
-  + Academic Model (TF-IDF + Logistic Regression)
-  + Cosine Similarity + Negation Filtering + Hybrid Ranking
+  Semantic Search (TF-IDF + IndoBERT Embeddings)
+  + IndoBERT Category Classifier Probability Boost
+  + Region/Location Filter + Negation Post-Filtering
 ==========================================================
 """
 
@@ -15,7 +15,7 @@ import re
 import pickle
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
+from sklearn.preprocessing import MinMaxScaler
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # ============================================================
 # Logging Configuration
@@ -45,22 +46,43 @@ ai_engine: dict = {}
 # Path Configuration
 # ============================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SBERT_MODEL_PATH = os.path.join(BASE_DIR, "sbert_model")
-EMBEDDINGS_PATH = os.path.join(BASE_DIR, "review_embeddings.pkl")
-DATASET_PATH = os.path.join(BASE_DIR, "processed_dataset.csv")
-TFIDF_PATH = os.path.join(BASE_DIR, "tfidf_vectorizer.pkl")
-LR_MODEL_PATH = os.path.join(BASE_DIR, "logistic_regression_model.pkl")
-LABEL_ENCODER_PATH = os.path.join(BASE_DIR, "label_encoder_category.pkl")
-SCALER_PATH = os.path.join(BASE_DIR, "reviews_scaler.pkl")
+INDOBERT_MODEL_PATH = os.path.join(BASE_DIR, "indobert_classifier")
+DATASET_PATH = os.path.join(BASE_DIR, "data wisata jawabarat.xlsx")
+LABEL_ENCODER_PATH = os.path.join(INDOBERT_MODEL_PATH, "label_encoder.pkl")
+TOURISM_EMBEDDINGS_PATH = os.path.join(INDOBERT_MODEL_PATH, "tourism_embeddings.pkl")
 
-# Keyword yang akan dicek di kolom name dan category untuk negation filtering
-GROUP_FILTER_KEYWORDS = {
-    'gunung': ['gunung', 'gn ', 'gn.', 'puncak', 'kawah', 'mendaki'],
+MAIN_CATEGORY_DESCRIPTIONS = {
+    "Wisata Alam": "Air Terjun, Danau, Cagar Alam, Bukit",
+    "Pantai": "Pantai, Pantai Umum, Pesisir Laut",
+    "Camping": "Bumi Perkemahan, Kabin Perkemahan, Glamping",
+    "Keluarga": "Kebun Binatang, Kolam Renang, Taman Rekreasi Air, Taman Bermain",
+    "Adventure": "Rafting, Offroad, Gunung Berapi, Puncak Gunung, Area Mendaki",
+    "Fotografi": "Titik Pemandangan, Bangunan Bersejarah",
+    "Healing": "Pemandian Air Panas, Spa, Hotel Resor, Pemandian Terbuka",
+    "Lainnya": "Hotel, Produsen Makanan, Pembangkit Listrik, Event Organizer, dan kategori lain"
+}
+
+category_mapping = {
+    "wisata alam": "wisata_alam",
+    "pantai": "pantai",
+    "camping": "camping",
+    "keluarga": "keluarga",
+    "adventure": "adventure",
+    "fotografi": "fotografi",
+    "healing / relaksasi": "healing",
+    "healing": "healing",
+    "lainnya": "wisata_alam"
+}
+
+NEGATION_FILTER_KEYWORDS = {
     'pantai': ['pantai', 'beach', 'pesisir'],
-    'camping': ['camping', 'camp', 'kemah', 'glamping', 'perkemahan'],
-    'adventure': ['rafting', 'offroad', 'arung jeram', 'adventure'],
-    'keluarga': ['zoo', 'kebun binatang'],
-    'healing': ['spa', 'pemandian', 'hot spring'],
+    'camping': ['camping', 'camp', 'kemah', 'tenda', 'glamping'],
+    'keluarga': ['zoo', 'kebun binatang', 'taman bermain', 'taman rekreasi'],
+    'adventure': ['rafting', 'offroad', 'hiking', 'trekking', 'arung jeram', 'mendaki', 'climbing', 'caving'],
+    'gunung': ['gunung', 'gn', 'puncak', 'kawah', 'volcano'],
+    'healing': ['spa', 'pemandian', 'hot spring', 'hangat'],
+    'fotografi': ['titik pemandangan', 'candi', 'monumen', 'sejarah'],
+    'kuliner': ['produsen makanan', 'kuliner', 'makanan', 'resto']
 }
 
 # ============================================================
@@ -72,8 +94,12 @@ class RecommendRequest(BaseModel):
         ...,
         min_length=3,
         max_length=500,
-        description="Kalimat bahasa natural dari user, misal: 'pengen ke pantai yang sepi buat healing'",
-        json_schema_extra={"examples": ["pengen ke pantai yang sepi buat healing"]},
+        description="Kalimat bahasa natural dari user, misal: 'tempat dingin tapi bukan gunung'",
+        json_schema_extra={"examples": ["tempat dingin tapi bukan gunung"]},
+    )
+    category: Optional[str] = Field(
+        default=None,
+        description="Kategori utama terpilih dari Tahap 1, misal: 'Keluarga' atau 'Adventure'",
     )
     top_n: int = Field(
         default=5,
@@ -90,7 +116,7 @@ class IntentRequest(BaseModel):
         min_length=3,
         max_length=500,
         description="Kalimat bahasa natural untuk diprediksi intent-nya",
-        json_schema_extra={"examples": ["rafting dan offroad seru"]},
+        json_schema_extra={"examples": ["camping yang adem dan murah"]},
     )
 
 
@@ -108,6 +134,8 @@ class RecommendationItem(BaseModel):
     similarity_score: float
     final_score: float
     reviews: Optional[list[str]] = None
+    preference_match: Optional[float] = None
+    category_match: Optional[float] = None
 
 
 class RecommendResponse(BaseModel):
@@ -145,116 +173,188 @@ class HealthResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Load AI models dan dataset saat server startup."""
     logger.info("=" * 60)
-    logger.info("🚀 JABARULIN AI (v2.0) — Memulai Loading Resources...")
+    logger.info("🚀 JABARULIN AI (v3.0) — Memulai Loading Resources...")
     logger.info("=" * 60)
 
     # --- 1. Deteksi Device (GPU/CPU) ---
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"📱 Device: {device}")
 
-    # --- 2. Load SentenceTransformer Model ---
-    # Gunakan folder lokal jika ada config.json (model lokal lengkap), jika tidak, load dari Hugging Face
-    is_local = os.path.exists(os.path.join(SBERT_MODEL_PATH, "config.json"))
+    # --- 2. Load IndoBERT Model & Tokenizer ---
+    is_local = os.path.exists(os.path.join(INDOBERT_MODEL_PATH, "config.json"))
     
     if is_local:
-        logger.info(f"🧠 Loading SentenceTransformer Model dari folder lokal ({SBERT_MODEL_PATH})...")
+        logger.info(f"🧠 Loading IndoBERT Model dari folder lokal ({INDOBERT_MODEL_PATH})...")
         try:
-            sbert_model = SentenceTransformer(SBERT_MODEL_PATH, device=str(device))
-            logger.info(f"✅ SentenceTransformer Model ({SBERT_MODEL_PATH}) berhasil dimuat!")
+            tokenizer = AutoTokenizer.from_pretrained(INDOBERT_MODEL_PATH)
+            model = AutoModelForSequenceClassification.from_pretrained(INDOBERT_MODEL_PATH)
+            logger.info("✅ IndoBERT Model lokal berhasil dimuat!")
         except Exception as e:
-            logger.error(f"❌ Gagal memuat SentenceTransformer Model ({SBERT_MODEL_PATH}): {e}")
-            raise RuntimeError(f"SentenceTransformer loading failed: {e}")
+            logger.error(f"❌ Gagal memuat IndoBERT Model lokal: {e}")
+            raise RuntimeError(f"IndoBERT local loading failed: {e}")
     else:
-        hf_repo = os.getenv("SBERT_MODEL_NAME", "Dhaffa/jabarulin-semantic-model")
-        hf_subfolder = os.getenv("SBERT_MODEL_SUBFOLDER", "sbert_model")
-        logger.info(f"🧠 Loading SentenceTransformer Model dari Hugging Face Hub ({hf_repo}), subfolder: {hf_subfolder}...")
+        hf_repo = os.getenv("HF_REPO_ID", "Dhaffa/jabarulin-indobert-recommendation")
+        logger.info(f"🧠 Loading IndoBERT Model dari Hugging Face Hub ({hf_repo})...")
         try:
-            sbert_model = SentenceTransformer(hf_repo, subfolder=hf_subfolder, device=str(device))
-            logger.info(f"✅ SentenceTransformer Model ({hf_repo}/{hf_subfolder}) berhasil dimuat!")
+            tokenizer = AutoTokenizer.from_pretrained(hf_repo)
+            model = AutoModelForSequenceClassification.from_pretrained(hf_repo)
+            logger.info(f"✅ IndoBERT Model ({hf_repo}) dari Hugging Face Hub berhasil dimuat!")
         except Exception as e:
-            logger.error(f"❌ Gagal memuat SentenceTransformer Model ({hf_repo}/{hf_subfolder}): {e}")
-            raise RuntimeError(f"SentenceTransformer loading failed: {e}")
+            logger.error(f"❌ Gagal memuat IndoBERT Model dari Hugging Face Hub: {e}")
+            raise RuntimeError(f"IndoBERT Hugging Face loading failed: {e}")
 
-    # --- 3. Load Embeddings ---
-    logger.info("🧠 Loading Review Embeddings...")
+    model.to(device)
+
+    # --- 3. Load Label Encoder ---
+    if is_local:
+        logger.info("🏷️ Loading Label Encoder dari folder lokal...")
+        local_le_path = LABEL_ENCODER_PATH
+    else:
+        hf_repo = os.getenv("HF_REPO_ID", "Dhaffa/jabarulin-indobert-recommendation")
+        logger.info("🏷️ Downloading Label Encoder dari Hugging Face Hub...")
+        try:
+            from huggingface_hub import hf_hub_download
+            local_le_path = hf_hub_download(repo_id=hf_repo, filename="label_encoder.pkl")
+        except Exception as e:
+            logger.error(f"❌ Gagal mendownload Label Encoder dari Hugging Face Hub: {e}")
+            raise RuntimeError(f"Label Encoder download failed: {e}")
+
     try:
-        with open(EMBEDDINGS_PATH, "rb") as f:
-            review_embeddings = pickle.load(f)
-        logger.info(f"✅ Review Embeddings dimuat! Shape: {review_embeddings.shape}")
+        with open(local_le_path, "rb") as f:
+            label_encoder = pickle.load(f)
+        logger.info(f"✅ Label Encoder dimuat! Classes: {list(label_encoder.classes_)}")
     except Exception as e:
-        logger.error(f"❌ Gagal memuat Review Embeddings: {e}")
-        raise RuntimeError(f"Review embeddings loading failed: {e}")
+        logger.error(f"❌ Gagal memuat Label Encoder: {e}")
+        raise RuntimeError(f"Label Encoder loading failed: {e}")
 
-    # --- 4. Load & Preprocess Dataset ---
+    # --- 4. Load Tourism Embeddings ---
+    if is_local:
+        logger.info("🧠 Loading Tourism Embeddings dari folder lokal...")
+        local_embeddings_path = TOURISM_EMBEDDINGS_PATH
+    else:
+        hf_repo = os.getenv("HF_REPO_ID", "Dhaffa/jabarulin-indobert-recommendation")
+        logger.info("🧠 Downloading Tourism Embeddings dari Hugging Face Hub...")
+        try:
+            from huggingface_hub import hf_hub_download
+            local_embeddings_path = hf_hub_download(repo_id=hf_repo, filename="tourism_embeddings.pkl")
+        except Exception as e:
+            logger.error(f"❌ Gagal mendownload Tourism Embeddings dari Hugging Face Hub: {e}")
+            raise RuntimeError(f"Tourism Embeddings download failed: {e}")
+
+    try:
+        with open(local_embeddings_path, "rb") as f:
+            tourism_embeddings = pickle.load(f)
+        logger.info(f"✅ Tourism Embeddings dimuat! Shape: {tourism_embeddings.shape}")
+    except Exception as e:
+        logger.error(f"❌ Gagal memuat Tourism Embeddings: {e}")
+        raise RuntimeError(f"Tourism Embeddings loading failed: {e}")
+
+    # --- 5. Load & Preprocess Dataset ---
     logger.info("📊 Loading Dataset...")
     try:
-        df = pd.read_csv(DATASET_PATH)
-        # Samakan intent_label dengan category_group untuk kompatibilitas frontend
-        df['intent_label'] = df['category_group']
-        
-        tourism_df = df[
-            ["name", "category", "intent_label", "category_group", "rating", "cleaned_reviews", "all_reviews",
-             "address", "phone", "website", "total_reviews", "google_maps_url"]
-        ].copy()
-        tourism_df["name"] = tourism_df["name"].astype(str).str.title().str.strip()
-        tourism_df["rating"] = tourism_df["rating"].fillna(tourism_df["rating"].mean())
-        tourism_df["cleaned_reviews"] = tourism_df["cleaned_reviews"].fillna("")
-        tourism_df["all_reviews"] = tourism_df["all_reviews"].fillna("")
-        tourism_df["address"] = tourism_df["address"].fillna("")
-        tourism_df["phone"] = tourism_df["phone"].fillna("")
-        tourism_df["website"] = tourism_df["website"].fillna("")
-        tourism_df["google_maps_url"] = tourism_df["google_maps_url"].fillna("")
-        tourism_df["total_reviews"] = tourism_df["total_reviews"].fillna(0).astype(int)
-        
-        logger.info(f"✅ Dataset dimuat! {len(tourism_df)} baris, {tourism_df['name'].nunique()} destinasi unik")
+        df = pd.read_excel(DATASET_PATH, sheet_name='bersih bersih')
+        df['name'] = df['name'].astype(str).str.title().str.strip()
+        df['rating'] = pd.to_numeric(df['rating'], errors='coerce').fillna(df['rating'].mean())
+        df['total_reviews'] = pd.to_numeric(df['total_reviews'], errors='coerce').fillna(0).astype(int)
+        df['all_reviews'] = df['all_reviews'].fillna('')
+        df['cleaned_reviews'] = df['cleaned_reviews'].fillna('')
+        df['clean_content'] = df['clean_content'].fillna('')
+        df['category'] = df['category'].fillna('lainnya')
+        df['address'] = df['address'].fillna('')
+        df['phone'] = df['phone'].fillna('')
+        df['website'] = df['website'].fillna('')
+        df['google_maps_url'] = df['google_maps_url'].fillna('')
+
+        category_to_preference = {
+            'tujuan wisata': 'wisata_alam',
+            'area rekreasi alam': 'wisata_alam',
+            'wisata alam': 'wisata_alam',
+            'cagar alam': 'wisata_alam',
+            'danau': 'wisata_alam',
+            'air terjun': 'wisata_alam',
+            'pembangkit listrik': 'wisata_alam',
+            'pemandian umum luas': 'healing',
+            'spa': 'healing',
+            'pemandian di ruang terbuka': 'healing',
+            'hotel bintang 4': 'healing',
+            'pemandian air panas': 'healing',
+            'hotel': 'healing',
+            'hotel resor': 'healing',
+            'hotel bintang 2': 'healing',
+            'produsen makanan': 'wisata_alam',
+            'kolam renang': 'keluarga',
+            'kolam renang umum': 'keluarga',
+            'event organizer eo': 'keluarga',
+            'kebun binatang': 'keluarga',
+            'taman': 'keluarga',
+            'taman rekreasi air': 'keluarga',
+            'area mendaki': 'adventure',
+            'pusat olahraga petualangan': 'adventure',
+            'rafting': 'adventure',
+            'operator wisata rafting': 'adventure',
+            'gunung berapi': 'adventure',
+            'puncak gunung': 'adventure',
+            'jasa sewa kendaraan segala medan': 'adventure',
+            'pantai': 'pantai',
+            'pantai umum': 'pantai',
+            'bumi perkemahan': 'camping',
+            'kabin perkemahan': 'camping',
+            'camp pelatihan': 'camping',
+            'camp musim panas anak anak': 'camping',
+            'kamp pelatihan': 'camping',
+            'kamp musim panas anak anak': 'camping',
+            'titik pemandangan': 'fotografi',
+            'bangunan bersejarah': 'fotografi'
+        }
+
+        df['preference_label'] = df['category'].map(category_to_preference).fillna('wisata_alam')
+        df['intent_label'] = df['preference_label']
+
+        df['search_text'] = (
+            df['all_reviews'].astype(str) + " " +
+            df['cleaned_reviews'].astype(str) + " " +
+            df['clean_content'].astype(str)
+        ).str.strip()
+
+        df['rating_score'] = df['rating'] / 5.0
+        df['popularity_score'] = np.log1p(df['total_reviews'])
+        scaler = MinMaxScaler()
+        df['popularity_score'] = scaler.fit_transform(df[['popularity_score']])
+
+        class_to_idx = {cls_name: idx for idx, cls_name in enumerate(label_encoder.classes_)}
+
+        logger.info(f"✅ Dataset dimuat! {len(df)} baris, {df['name'].nunique()} destinasi unik")
     except Exception as e:
         logger.error(f"❌ Gagal memuat Dataset: {e}")
         raise RuntimeError(f"Dataset loading failed: {e}")
 
-    # --- 5. Load Scaler & Normalise columns ---
-    logger.info("⚖️ Loading Reviews Scaler...")
+    # --- 6. Fit TF-IDF Vectorizer dynamically ---
+    logger.info("📊 Fitting TF-IDF Vectorizer...")
     try:
-        with open(SCALER_PATH, "rb") as f:
-            reviews_scaler = pickle.load(f)
-        logger.info("✅ Reviews Scaler berhasil dimuat!")
+        tfidf_vectorizer = TfidfVectorizer(max_features=5000)
+        tfidf_matrix = tfidf_vectorizer.fit_transform(df['search_text'])
+        logger.info(f"✅ TF-IDF Matrix Shape: {tfidf_matrix.shape}")
     except Exception as e:
-        logger.error(f"❌ Gagal memuat Reviews Scaler: {e}")
-        raise RuntimeError(f"Scaler loading failed: {e}")
-
-    # Normalisasi untuk Hybrid Ranking
-    tourism_df['rating_normalized'] = tourism_df['rating'] / 5.0
-    tourism_df['reviews_normalized'] = reviews_scaler.transform(tourism_df[['total_reviews']])
-
-    # --- 6. Load Academic Models (TF-IDF, LR, Label Encoder) ---
-    logger.info("🏷️ Loading Academic Models (TF-IDF + Logistic Regression)...")
-    try:
-        with open(LABEL_ENCODER_PATH, "rb") as f:
-            label_encoder = pickle.load(f)
-        with open(TFIDF_PATH, "rb") as f:
-            tfidf_vectorizer = pickle.load(f)
-        with open(LR_MODEL_PATH, "rb") as f:
-            lr_model = pickle.load(f)
-        logger.info(f"✅ Academic Models dimuat! Classes: {list(label_encoder.classes_)}")
-    except Exception as e:
-        logger.error(f"❌ Gagal memuat Academic Models: {e}")
-        raise RuntimeError(f"Academic models loading failed: {e}")
+        logger.error(f"❌ Gagal fitting TF-IDF Vectorizer: {e}")
+        raise RuntimeError(f"TF-IDF Vectorizer fitting failed: {e}")
 
     # --- 7. Simpan ke Global State ---
     ai_engine["device"] = device
-    ai_engine["sbert_model"] = sbert_model
-    ai_engine["review_embeddings"] = review_embeddings
-    ai_engine["tourism_df"] = tourism_df
-    ai_engine["reviews_scaler"] = reviews_scaler
+    ai_engine["tokenizer"] = tokenizer
+    ai_engine["model"] = model
     ai_engine["label_encoder"] = label_encoder
+    ai_engine["tourism_embeddings"] = tourism_embeddings
+    ai_engine["tourism_df"] = df
+    ai_engine["class_to_idx"] = class_to_idx
     ai_engine["tfidf_vectorizer"] = tfidf_vectorizer
-    ai_engine["lr_model"] = lr_model
+    ai_engine["tfidf_matrix"] = tfidf_matrix
 
     logger.info("=" * 60)
-    logger.info("✅ JABARULIN AI (v2.0) — Semua Resources Berhasil Dimuat!")
+    logger.info("✅ JABARULIN AI (v3.0) — Semua Resources Berhasil Dimuat!")
     logger.info("📍 Swagger UI: http://localhost:8000/docs")
     logger.info("=" * 60)
 
-    yield  # Server berjalan di sini
+    yield
 
     # --- Cleanup saat shutdown ---
     logger.info("🛑 JABARULIN AI — Server shutting down...")
@@ -268,13 +368,13 @@ app = FastAPI(
     title="Jabarulin AI API",
     description=(
         "🌴 **Sistem Rekomendasi Wisata Cerdas Jawa Barat** — Capstone Project PJK-GM049\n\n"
-        "API ini menggunakan arsitektur Hybrid AI v2.0:\n"
-        "- **SentenceTransformer (Semantic Search)** → Memahami review pengunjung sebagai corpus utama\n"
-        "- **Negation Detection & Post-Filtering** → Mengabaikan jenis wisata yang dihindari user (e.g. 'tapi bukan gunung')\n"
-        "- **Hybrid Ranking** → Kombinasi 75% kesesuaian semantik + 15% rating + 10% total reviews\n"
-        "- **TF-IDF + Logistic Regression** → Model akademik untuk memprediksi kelompok kategori (intent)"
+        "API ini menggunakan arsitektur Hybrid AI v3.0 berbasis model **IndoBERT**:\n"
+        "- **IndoBERT Classifier** → Memprediksi kesesuaian kategori preferensi berdasarkan ulasan pengunjung\n"
+        "- **Semantic Search (TF-IDF + IndoBERT Embeddings)** → Membandingkan kedekatan kueri dengan seluruh ulasan pariwisata\n"
+        "- **Region & Negation Post-Filtering** → Post-filtering penolakan destinasi (e.g. 'bukan gunung') dan pencarian kota/kabupaten\n"
+        "- **Hybrid Ranking** → Kombinasi 50% kesesuaian semantik + 20% pref match + 15% category match + 10% rating + 5% total reviews"
     ),
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -291,17 +391,276 @@ app.add_middleware(
 # ============================================================
 # Core AI Functions
 # ============================================================
-def predict_intent(user_input: str) -> tuple[str, dict[str, float]]:
-    """Memprediksi kelompok kategori menggunakan model akademik TF-IDF + Logistic Regression."""
+def normalize_query(query_text: str) -> str:
+    """Membersihkan slang, singkatan, dan typo Bahasa Indonesia."""
+    query_lower = query_text.lower()
+    slang_dict = {
+        r'\bpntai\b': 'pantai',
+        r'\bcampng\b': 'camping',
+        r'\bhiling\b': 'healing',
+        r'\bkluarga\b': 'keluarga',
+        r'\bfamily\b': 'keluarga',
+        r'\bnongki\b': 'nongkrong',
+        r'\bnongkrong\b': 'nongkrong',
+        r'\badem\b': 'dingin',
+        r'\bgw\b': 'saya',
+        r'\bgua\b': 'saya',
+        r'\bguaa\b': 'saya',
+        r'\btmpat\b': 'tempat',
+        r'\btpt\b': 'tempat',
+        r'\bbgus\b': 'bagus',
+        r'\bwisata_alam\b': 'wisata alam',
+        r'\bngilangin\b': 'menghilangkan',
+        r'\bstress\b': 'stres'
+    }
+    for slang, formal in slang_dict.items():
+        query_lower = re.sub(slang, formal, query_lower)
+    query_lower = re.sub(r'\s+', ' ', query_lower).strip()
+    return query_lower
+
+
+def get_negated_categories(query_text: str) -> list[str]:
+    """Mendeteksi kategori wisata yang dinegasikan pengguna."""
+    query_lower = query_text.lower()
+    excluded = []
+
+    negations = ["ga mau", "gak mau", "tidak mau", "bukan", "selain", "jangan", "ga usah", "gak usah", "tanpa", "hindari"]
+    keywords_map = {
+        "pantai": ["pantai", "laut", "beach", "pesisir"],
+        "camping": ["camping", "camp", "kemah", "tenda", "glamping"],
+        "keluarga": ["keluarga", "anak", "family", "zoo", "kebun binatang"],
+        "adventure": ["adventure", "rafting", "offroad", "hiking", "trekking", "arung jeram", "ekstrem", "ekstrim"],
+        "gunung": ["gunung", "puncak", "muncak", "nanjak", "kawah", "mendaki"],
+        "healing": ["healing", "hiling", "spa", "pemandian", "rileks", "santai", "sepi", "tenang"],
+        "fotografi": ["foto", "fotografi", "pemandangan", "sejara"],
+        "kuliner": ["kuliner", "makanan", "kulner", "makan"]
+    }
+
+    for neg in negations:
+        for match in re.finditer(rf"\b{re.escape(neg)}\b", query_lower):
+            start_idx = match.end()
+            rest_of_text = query_lower[start_idx:]
+
+            contrast = re.search(r"\b(tapi|tetapi|namun|sedangkan|cuma)\b", rest_of_text)
+            if contrast:
+                rest_of_text = rest_of_text[:contrast.start()]
+
+            for label, keywords in keywords_map.items():
+                for kw in keywords:
+                    if kw in rest_of_text:
+                        excluded.append(label)
+                        break
+
+    return list(set(excluded))
+
+
+def filter_negated_results(result_df: pd.DataFrame, excluded_labels: list[str]) -> pd.DataFrame:
+    """Menyaring wisata berdasarkan ulasan negasi dan preferensi yang dihindari."""
+    if not excluded_labels:
+        return result_df
+
+    mask = result_df['preference_label'].isin(excluded_labels)
+
+    filter_keywords = []
+    for label in excluded_labels:
+        if label in NEGATION_FILTER_KEYWORDS:
+            filter_keywords.extend(NEGATION_FILTER_KEYWORDS[label])
+        filter_keywords.append(label)
+
+    pattern = '|'.join(re.escape(kw) for kw in filter_keywords)
+
+    name_mask = result_df['name'].str.lower().str.contains(pattern, regex=True, na=False)
+    category_mask = result_df['category'].str.lower().str.contains(pattern, regex=True, na=False)
+
+    combined_mask = mask | name_mask | category_mask
+    return result_df[~combined_mask].copy()
+
+
+def filter_by_location(result_df: pd.DataFrame, query_text: str) -> pd.DataFrame:
+    """Mendeteksi filter wilayah pariwisata Jawa Barat dalam query."""
+    query_lower = query_text.lower()
+    regions = [
+        'bogor', 'bandung', 'garut', 'pangandaran', 'sukabumi',
+        'majalengka', 'subang', 'cianjur', 'kuningan', 'cirebon',
+        'tasikmalaya', 'depok', 'bekasi', 'karawang', 'purwakarta', 'sumedang'
+    ]
+
+    detected_region = None
+    for region in regions:
+        if re.search(rf'\b{region}\b', query_lower):
+            detected_region = region
+            break
+
+    if detected_region:
+        loc_pattern = detected_region
+        if detected_region == 'bandung':
+            loc_pattern = 'bandung|lembang|pangalengan|ciwidey'
+        elif detected_region == 'bogor':
+            loc_pattern = 'bogor|puncak|sentul'
+
+        loc_mask = (
+            result_df['name'].str.lower().str.contains(loc_pattern, regex=True, na=False) |
+            result_df['address'].str.lower().str.contains(loc_pattern, regex=True, na=False)
+        )
+        filtered_df = result_df[loc_mask].copy()
+        if not filtered_df.empty:
+            logger.info(f"📍 Location Filter: Hanya menampilkan tempat wisata di daerah {detected_region.upper()}")
+            return filtered_df
+        else:
+            logger.info(f"⚠️ Filter lokasi '{detected_region.upper()}' terdeteksi, namun tidak ditemukan tempat yang cocok di database. Menampilkan semua lokasi.")
+
+    return result_df
+
+
+def extract_indobert_embeddings(texts: list[str], model, tokenizer, device, max_len=128, batch_size=16) -> np.ndarray:
+    """Mengekstrak embedding kalimat menggunakan layer backbone IndoBERT (Mean Pooling)."""
+    model.eval()
+    all_embeddings = []
+    bert_backbone = model.bert
+
+    for i in range(0, len(texts), batch_size):
+        batch_texts = texts[i : i + batch_size]
+        inputs = tokenizer(
+            batch_texts,
+            padding=True,
+            truncation=True,
+            max_length=max_len,
+            return_tensors="pt"
+        ).to(device)
+
+        with torch.no_grad():
+            outputs = bert_backbone(**inputs)
+            token_embeddings = outputs.last_hidden_state
+            attention_mask = inputs['attention_mask']
+
+            input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+            sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1)
+            sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+            mean_embeddings = (sum_embeddings / sum_mask).cpu().numpy()
+
+            all_embeddings.append(mean_embeddings)
+
+    return np.vstack(all_embeddings)
+
+
+def get_hybrid_recommendation(
+    main_category: str, additional_preference: str, top_n: int = 5, similarity_threshold: float = 0.0
+) -> Tuple[pd.DataFrame, str]:
+    """Sistem rekomendasi utama berbasis IndoBERT Hybrid Ranking & Negation Filter."""
+    model = ai_engine["model"]
+    tokenizer = ai_engine["tokenizer"]
+    device = ai_engine["device"]
+    le = ai_engine["label_encoder"]
+    tourism_embeddings = ai_engine["tourism_embeddings"]
     tfidf_vectorizer = ai_engine["tfidf_vectorizer"]
-    lr_model = ai_engine["lr_model"]
+    tfidf_matrix = ai_engine["tfidf_matrix"]
+    df = ai_engine["tourism_df"]
+    class_to_idx = ai_engine["class_to_idx"]
+
+    # 1. Normalisasi Query & Deteksi Negasi
+    normalized_pref = normalize_query(additional_preference)
+    excluded_labels = get_negated_categories(normalized_pref)
+
+    # 2. Prediksi Probabilitas Intent Menggunakan IndoBERT Classifier
+    model.eval()
+    inputs = tokenizer(
+        normalized_pref,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=64
+    ).to(device)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = torch.softmax(outputs.logits, dim=-1).flatten().cpu().numpy()
+
+    category_probs = {le.classes_[i]: float(probs[i]) for i in range(len(le.classes_))}
+    predicted_intent = max(category_probs, key=category_probs.get)
+
+    # 3. Hitung Semantic Similarity (40% TF-IDF + 30% IndoBERT Embeddings)
+    query_tfidf = tfidf_vectorizer.transform([normalized_pref])
+    tfidf_similarities = cosine_similarity(query_tfidf, tfidf_matrix).flatten()
+
+    query_embedding = extract_indobert_embeddings([normalized_pref], model, tokenizer, device, max_len=64)
+    indobert_similarities = cosine_similarity(query_embedding, tourism_embeddings).flatten()
+
+    # Normalisasi combined similarity dengan pembagi 0.70
+    combined_semantic_similarity = (0.40 * tfidf_similarities + 0.30 * indobert_similarities) / 0.70
+
+    results = df.copy()
+    results['semantic_similarity'] = combined_semantic_similarity
+    results['similarity_score'] = combined_semantic_similarity
+
+    # 4. Ambil Preference Match dari IndoBERT Probability
+    results['preference_match'] = results['preference_label'].map(class_to_idx).map(
+        lambda idx: float(probs[idx]) if pd.notna(idx) else 0.0
+    )
+
+    # 5. Hitung Category Match (tahap 1 vs preferensi label pariwisata)
+    target_category = category_mapping.get(main_category.lower().strip(), "wisata_alam")
+    results['category_match'] = (results['preference_label'] == target_category).astype(float)
+
+    # 6. Terapkan Filter Negasi
+    if excluded_labels:
+        results = filter_negated_results(results, excluded_labels)
+
+    # 7. Terapkan Filter Lokasi
+    results = filter_by_location(results, normalized_pref)
+
+    # 8. Filter Threshold
+    results = results[results['semantic_similarity'] >= similarity_threshold].copy()
+
+    if results.empty:
+        return pd.DataFrame(), predicted_intent
+
+    # 9. Hitung Final Score: 50% Semantik + 20% Pref Match + 15% Cat Match + 10% Rating + 5% Popularity
+    results['final_score'] = (
+        0.50 * results['semantic_similarity'] +
+        0.20 * results['preference_match'] +
+        0.15 * results['category_match'] +
+        0.10 * results['rating_score'] +
+        0.05 * results['popularity_score']
+    )
+
+    # Sort & Deduplicate
+    results = results.sort_values(by='final_score', ascending=False)
+    results = results.drop_duplicates(subset='name', keep='first')
+
+    recommendations = results.head(top_n).copy()
+
+    recommendations['semantic_similarity'] = recommendations['semantic_similarity'].round(4)
+    recommendations['similarity_score'] = recommendations['similarity_score'].round(4)
+    recommendations['preference_match'] = recommendations['preference_match'].round(4)
+    recommendations['category_match'] = recommendations['category_match'].round(4)
+    recommendations['final_score'] = recommendations['final_score'].round(4)
+    recommendations['rating'] = recommendations['rating'].round(1)
+
+    return recommendations, predicted_intent
+
+
+def predict_intent(user_input: str) -> Tuple[str, dict]:
+    """Memprediksi kelompok kategori menggunakan model IndoBERT Classifier."""
+    tokenizer = ai_engine["tokenizer"]
+    model = ai_engine["model"]
+    device = ai_engine["device"]
     label_encoder = ai_engine["label_encoder"]
 
-    vector = tfidf_vectorizer.transform([user_input])
-    probs = lr_model.predict_proba(vector)[0]
-    
+    normalized = normalize_query(user_input)
+    inputs = tokenizer(
+        normalized,
+        return_tensors="pt",
+        truncation=True,
+        padding=True,
+        max_length=64
+    ).to(device)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+        probs = torch.softmax(outputs.logits, dim=-1).flatten().cpu().numpy()
+
     predicted_class_id = probs.argmax().item()
-    predicted_intent = label_encoder.inverse_transform([predicted_class_id])[0]
+    predicted_intent = label_encoder.classes_[predicted_class_id]
 
     confidence_scores = {}
     for idx, label in enumerate(label_encoder.classes_):
@@ -310,159 +669,30 @@ def predict_intent(user_input: str) -> tuple[str, dict[str, float]]:
     return predicted_intent, confidence_scores
 
 
-def detect_negated_categories(user_input: str) -> list[str]:
-    """Mendeteksi kategori wisata yang dinegasikan oleh pengguna."""
-    user_input_lower = user_input.lower()
-    excluded = []
-    
-    negations = [
-        'ga mau', 'gak mau', 'tidak mau', 'bukan', 'selain',
-        'hindari', 'tanpa', 'jangan', 'ga usah', 'gak usah',
-        'males', 'ogah', 'no'
-    ]
-    
-    keyword_to_group = {
-        'gunung': ['gunung', 'muncak', 'puncak', 'pendakian', 'nanjak', 'kawah', 'mendaki'],
-        'pantai': ['pantai', 'laut', 'pesisir', 'beach'],
-        'camping': ['camping', 'camp', 'ngecamp', 'kemah', 'tenda', 'glamping'],
-        'adventure': ['rafting', 'offroad', 'caving', 'climbing', 'hiking',
-                      'trekking', 'arung jeram', 'ekstrim', 'ekstrem'],
-        'keluarga': ['keluarga', 'anak', 'family', 'zoo', 'kebun binatang'],
-        'healing': ['healing', 'spa', 'pemandian', 'rendam'],
-    }
-    
-    for neg in negations:
-        for match in re.finditer(re.escape(neg), user_input_lower):
-            rest = user_input_lower[match.end():]
-            
-            contrast = re.search(r'\b(tapi|tetapi|namun|cuma|tp)\b', rest)
-            if contrast:
-                rest = rest[:contrast.start()]
-            
-            for group, keywords in keyword_to_group.items():
-                for kw in keywords:
-                    if kw in rest:
-                        excluded.append(group)
-                        break
-    
-    return list(set(excluded))
-
-
-def filter_negated_results(result_df: pd.DataFrame, excluded_groups: list[str]) -> pd.DataFrame:
-    """Menyaring destinasi wisata jika mengandung keyword negasi pada nama, kategori, atau kelompok kategori."""
-    if not excluded_groups:
-        return result_df
-    
-    # 1. Filter berdasarkan category_group
-    group_mask = result_df['category_group'].isin(excluded_groups)
-    
-    # 2. Kumpulkan keyword untuk dicek di name dan category
-    filter_keywords = []
-    for group in excluded_groups:
-        if group in GROUP_FILTER_KEYWORDS:
-            filter_keywords.extend(GROUP_FILTER_KEYWORDS[group])
-        filter_keywords.append(group)
-    
-    # 3. Filter berdasarkan keyword di name
-    pattern = '|'.join(re.escape(kw) for kw in filter_keywords)
-    name_mask = result_df['name'].str.lower().str.contains(pattern, regex=True, na=False)
-    
-    # 4. Filter berdasarkan keyword di category (raw)
-    category_mask = result_df['category'].str.lower().str.contains(pattern, regex=True, na=False)
-    
-    # 5. Gabungkan: hapus jika ditemukan di SALAH SATU kolom
-    combined_mask = group_mask | name_mask | category_mask
-    filtered = result_df[~combined_mask].copy()
-    
-    return filtered
-
-
 def extract_sample_reviews(reviews_str: str, max_sentences: int = 3) -> list[str]:
     """Mengekstrak potongan kalimat ulasan riil dari kolom all_reviews."""
     if not reviews_str or not isinstance(reviews_str, str):
         return []
-    # Bersihkan whitespace berlebih
     reviews_str = re.sub(r'\s+', ' ', reviews_str)
-    # Pisahkan berdasarkan tanda baca kalimat
     sentences = re.split(r'[.\n!?]+', reviews_str)
     cleaned = []
     for s in sentences:
         s_clean = s.strip()
-        # Filter kalimat yang informatif (tidak terlalu pendek dan tidak terlalu panjang)
         if 20 < len(s_clean) < 180:
             cleaned.append(s_clean)
         if len(cleaned) >= max_sentences:
             break
     
-    # Fallback jika tidak ditemukan kalimat terpisah yang ideal
     if not cleaned and len(reviews_str.strip()) > 10:
         cleaned.append(reviews_str.strip()[:150] + "...")
         
     return cleaned
 
 
-def hybrid_recommendation(
-    user_input: str, top_n: int = 5, similarity_threshold: float = 0.1
-) -> tuple[pd.DataFrame, str, str]:
-    """Sistem rekomendasi berbasis semantic search + hybrid ranking + negation filter."""
-    sbert_model = ai_engine["sbert_model"]
-    review_embeddings = ai_engine["review_embeddings"]
-    tourism_df = ai_engine["tourism_df"]
-
-    # Predict intent menggunakan model akademik
-    predicted_intent, _ = predict_intent(user_input)
-
-    # Deteksi negasi
-    excluded_groups = detect_negated_categories(user_input)
-    
-    # Encode query
-    query_embedding = sbert_model.encode([user_input])
-    
-    # Hitung cosine similarity
-    similarity_scores = cosine_similarity(query_embedding, review_embeddings).flatten()
-    
-    # Buat dataframe hasil
-    result_df = tourism_df.copy()
-    result_df['semantic_similarity'] = similarity_scores
-    result_df['similarity_score'] = similarity_scores  # Alias untuk kompatibilitas frontend
-
-    # Post-filter negasi
-    if excluded_groups:
-        result_df = filter_negated_results(result_df, excluded_groups)
-    
-    # Filter threshold
-    result_df = result_df[result_df['semantic_similarity'] > similarity_threshold].copy()
-    
-    if result_df.empty:
-        return pd.DataFrame(), predicted_intent, "semantic_empty"
-    
-    # Hitung Hybrid Score: 75% semantic_similarity + 15% rating_normalized + 10% reviews_normalized
-    result_df['final_score'] = (
-        0.75 * result_df['semantic_similarity'] +
-        0.15 * result_df['rating_normalized'] +
-        0.10 * result_df['reviews_normalized']
-    )
-    
-    # Sort & Deduplicate
-    result_df = result_df.sort_values(by='final_score', ascending=False)
-    result_df = result_df.drop_duplicates(subset='name', keep='first')
-    
-    # Ambil Top-N
-    recommendations = result_df.head(top_n).copy()
-    
-    recommendations['semantic_similarity'] = recommendations['semantic_similarity'].round(4)
-    recommendations['similarity_score'] = recommendations['similarity_score'].round(4)
-    recommendations['final_score'] = recommendations['final_score'].round(4)
-    recommendations['rating'] = recommendations['rating'].round(1)
-    
-    return recommendations, predicted_intent, "semantic_hybrid"
-
-
 def df_to_recommendation_items(df: pd.DataFrame) -> list[RecommendationItem]:
     """Mengubah pandas DataFrame ke list of RecommendationItem pydantic model."""
     items = []
     for _, row in df.iterrows():
-        # Ekstrak sample reviews dari all_reviews
         all_revs = row.get("all_reviews", "")
         sample_revs = extract_sample_reviews(str(all_revs))
         
@@ -480,6 +710,8 @@ def df_to_recommendation_items(df: pd.DataFrame) -> list[RecommendationItem]:
                 similarity_score=round(float(row["similarity_score"]), 3),
                 final_score=round(float(row["final_score"]), 3),
                 reviews=sample_revs,
+                preference_match=round(float(row.get("preference_match", 0.0)), 3) if "preference_match" in row else None,
+                category_match=round(float(row.get("category_match", 0.0)), 3) if "category_match" in row else None,
             )
         )
     return items
@@ -492,38 +724,71 @@ def df_to_recommendation_items(df: pd.DataFrame) -> list[RecommendationItem]:
 async def root():
     return {
         "name": "Jabarulin AI API",
-        "version": "2.0.0",
-        "description": "Sistem Rekomendasi Wisata Cerdas Jawa Barat berbasis NLP & AI v2.0",
+        "version": "3.0.0",
+        "description": "Sistem Rekomendasi Wisata Cerdas Jawa Barat berbasis IndoBERT & AI v3.0",
     }
 
 
 @app.get("/api/health", response_model=HealthResponse, tags=["General"])
 async def health_check():
-    sbert_loaded = "sbert_model" in ai_engine
+    model_loaded = "model" in ai_engine and "tokenizer" in ai_engine
     dataset_loaded = "tourism_df" in ai_engine
-    academic_loaded = "lr_model" in ai_engine
     
-    is_healthy = sbert_loaded and dataset_loaded and academic_loaded
+    is_healthy = model_loaded and dataset_loaded
     
     return HealthResponse(
         status="healthy" if is_healthy else "degraded",
-        model_loaded=sbert_loaded,
+        model_loaded=model_loaded,
         dataset_loaded=dataset_loaded,
         total_destinations=ai_engine["tourism_df"]["name"].nunique() if dataset_loaded else 0,
-        available_intents=list(ai_engine["label_encoder"].classes_) if academic_loaded else [],
+        available_intents=list(ai_engine["label_encoder"].classes_) if model_loaded else [],
         device=str(ai_engine.get("device", "unknown")),
     )
 
 
 @app.post("/api/recommend", response_model=RecommendResponse, tags=["AI Recommendation"])
 async def recommend(request: RecommendRequest):
-    if "sbert_model" not in ai_engine:
+    if "model" not in ai_engine:
         raise HTTPException(status_code=503, detail="Model AI belum dimuat. Tunggu beberapa saat.")
 
-    logger.info(f"📨 Request: '{request.query}' (top_n={request.top_n})")
+    logger.info(f"📨 Request: category='{request.category}' query='{request.query}' (top_n={request.top_n})")
+    
+    # 1. Tentukan main_category
+    main_cat = request.category
+    if not main_cat or main_cat.strip() == "":
+        # Predict main_category dynamically if not provided
+        normalized_query = normalize_query(request.query)
+        inputs = ai_engine["tokenizer"](
+            normalized_query,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=64
+        ).to(ai_engine["device"])
+        
+        with torch.no_grad():
+            outputs = ai_engine["model"](**inputs)
+            probs = torch.softmax(outputs.logits, dim=-1).flatten().cpu().numpy()
+            
+        predicted_idx = probs.argmax().item()
+        predicted_class = ai_engine["label_encoder"].classes_[predicted_idx]
+        
+        # Map back dari le.classes_ ke MAIN_CATEGORY
+        inv_category_mapping = {
+            "wisata_alam": "Wisata Alam",
+            "pantai": "Pantai",
+            "camping": "Camping",
+            "keluarga": "Keluarga",
+            "adventure": "Adventure",
+            "fotografi": "Fotografi",
+            "healing": "Healing"
+        }
+        main_cat = inv_category_mapping.get(predicted_class, "Wisata Alam")
+        logger.info(f"🔮 Predicted main_category: '{main_cat}' (from predicted_intent: '{predicted_class}')")
+
     try:
-        recommendations_df, predicted_intent, recommendation_type = hybrid_recommendation(
-            request.query, top_n=request.top_n
+        recommendations_df, predicted_intent = get_hybrid_recommendation(
+            main_cat, request.query, top_n=request.top_n
         )
     except Exception as e:
         logger.error(f"❌ Error saat processing: {e}")
@@ -534,21 +799,21 @@ async def recommend(request: RecommendRequest):
             status="success",
             query=request.query,
             predicted_intent=predicted_intent,
-            recommendation_type=recommendation_type,
+            recommendation_type="indobert_hybrid_empty",
             total_results=0,
             recommendations=[],
         )
 
     items = df_to_recommendation_items(recommendations_df)
     logger.info(
-        f"✅ Response: intent={predicted_intent}, type={recommendation_type}, results={len(items)}"
+        f"✅ Response: intent={predicted_intent}, results={len(items)}"
     )
 
     return RecommendResponse(
         status="success",
         query=request.query,
         predicted_intent=predicted_intent,
-        recommendation_type=recommendation_type,
+        recommendation_type="indobert_hybrid",
         total_results=len(items),
         recommendations=items,
     )
@@ -556,7 +821,7 @@ async def recommend(request: RecommendRequest):
 
 @app.post("/api/predict-intent", response_model=IntentResponse, tags=["AI Recommendation"])
 async def predict_intent_endpoint(request: IntentRequest):
-    if "lr_model" not in ai_engine:
+    if "model" not in ai_engine:
         raise HTTPException(status_code=503, detail="Model belum dimuat. Tunggu beberapa saat.")
     try:
         predicted_intent, confidence_scores = predict_intent(request.query)

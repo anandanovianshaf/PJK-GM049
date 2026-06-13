@@ -10,7 +10,6 @@ Dockerfile
 .dockerignore
 notebooks/
 *.zip
-*.xlsx
 *.ipynb
 *.py
 !app.py

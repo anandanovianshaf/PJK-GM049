@@ -65,6 +65,7 @@ Thumbs.db
 *.pth
 *.zip
 Model_AI/sbert_model/
- 
- #   N e x t . j s  
- . n e x t /  
+Model_AI/indobert_classifier/
+
+# Next.js
+.next/
