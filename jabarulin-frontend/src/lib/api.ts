@@ -10,7 +10,7 @@ export interface DestinationItem {
 export interface RecommendationResponse {
   status: string;
   reply: string;
-  raw_data: DestinationItem;
+  raw_data: DestinationItem[];
   rute_dan_lalu_lintas: {
     jarak_meter: number;
     durasi_detik: number;
@@ -54,7 +54,7 @@ export const fetchRecommendations = async (
   return {
     status: data.status,
     reply: data.pesan_ai,
-    raw_data: data.destinasi,
+    raw_data: data.destinasi ? [data.destinasi] : [],
     rute_dan_lalu_lintas: data.rute_dan_lalu_lintas,
   };
 };
