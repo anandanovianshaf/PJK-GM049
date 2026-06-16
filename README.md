@@ -67,24 +67,25 @@ Repository ini telah dirancang agar bebas dari penyimpanan model berukuran besar
 
 ```text
 Jabarulin_Project/
-├── Model_AI/                      <-- (AI Service - Python)
-│   ├── notebooks/                 # Notebook pelatihan (jabarulin_indobert_recommendation.ipynb)
-│   ├── app.py                     # Script utama FastAPI (AI Engine dengan HF model loading)
-│   ├── data wisata jawabarat.xlsx # Dataset asli pariwisata Jawa Barat
-│   ├── requirements.txt           # Dependensi Python (PyTorch, Transformers, dll)
-│   └── Dockerfile                 # Konfigurasi Docker AI
+├── Backend/                    <-- Backend Service (Node.js & Express)
+│   ├── controllers/            # Logika kontrol rekomendasi & chatbot
+│   ├── routes/                 # Endpoint routing API
+│   ├── server.js               # Entry point server Express
+│   └── Dockerfile
 │
-├── Backend/                       <-- (Backend Service - Node.js)
-│   ├── controllers/
-│   │   └── recommendationController.js # Integrasi FastAPI & Gemini LLM
-│   ├── routes/
-│   │   └── apiRoutes.js            # Pengaturan rute Express
-│   ├── package.json                # Dependensi Backend
-│   ├── server.js                   # Script utama Express
-│   └── Dockerfile                  # Konfigurasi Docker Backend
+├── Model_AI/                   <-- AI Service (FastAPI & PyTorch)
+│   ├── notebooks/              # Jupyter Notebook pelatihan model IndoBERT
+│   ├── app.py                  # Entry point service API klasifikasi & hybrid scoring
+│   ├── requirements.txt        # Dependensi library Python
+│   └── Dockerfile
 │
-├── docker-compose.yml             <-- (Konduktor Orkestrasi Docker)
-└── .gitignore                     # Mengabaikan model lokal besar
+├── jabarulin-frontend/         <-- Frontend Service (Next.js & TypeScript)
+│   ├── src/                    # Komponen UI Next.js & halaman utama
+│   ├── package.json            # Dependensi library Node.js
+│   └── next.config.ts          # Konfigurasi Next.js
+│
+├── docker-compose.yml          # Konfigurasi orkestrasi container backend, AI, dan MongoDB
+└── .gitignore                  # Berkas gitignore untuk mengabaikan dataset lokal & model weights
 ```
 
 > **Catatan Model ML:** Folder `Model_AI/indobert_classifier/` yang berisi file model besar (~500MB) diabaikan oleh git. Saat dijalankan pertama kali di Docker atau local tanpa folder tersebut, aplikasi secara otomatis mengunduh file model (`model.safetensors`, `config.json`, `label_encoder.pkl`, `tourism_embeddings.pkl`, dll.) dari Hugging Face repository **[Dhaffa/jabarulin-indobert-recommendation](https://huggingface.co/Dhaffa/jabarulin-indobert-recommendation)**.
