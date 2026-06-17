@@ -47,7 +47,7 @@ interface ChatBotProps {
 
 export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps) {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory || null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -93,9 +93,10 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
+  // Hapus/nonaktifkan auto-scroll ke bawah saat ada pesan baru
+  // useEffect(() => {
+  //   scrollToBottom();
+  // }, [messages, scrollToBottom]);
 
   // Handle deep-linked initialQuery and initialCategory from Landing page
   useEffect(() => {
@@ -109,26 +110,12 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
       const cat = initialCategory;
       setSelectedCategory(cat);
 
-      const categoryWelcomeMsg: Message = {
-        id: "initial-cat-ai-" + Date.now(),
-        role: "ai",
-        content: `Kategori **${cat}** terpilih secara otomatis dari halaman utama. 🎯`,
-        timestamp: new Date()
-      };
-
       if (pendingQuery.current) {
         const queryText = pendingQuery.current;
         pendingQuery.current = null; // Clear pending query
 
         setMessages([
           WELCOME_MESSAGE,
-          {
-            id: "initial-cat-user-" + Date.now(),
-            role: "user",
-            content: `Kategori terpilih: ${cat}`,
-            timestamp: new Date()
-          },
-          categoryWelcomeMsg,
           {
             id: "initial-query-user-" + Date.now(),
             role: "user",
@@ -139,16 +126,7 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
 
         executeSearch(queryText, cat);
       } else {
-        setMessages([
-          WELCOME_MESSAGE,
-          {
-            id: "initial-cat-user-" + Date.now(),
-            role: "user",
-            content: `Kategori terpilih: ${cat}`,
-            timestamp: new Date()
-          },
-          categoryWelcomeMsg
-        ]);
+        setMessages([WELCOME_MESSAGE]);
       }
     }
   }, [initialCategory]);
@@ -185,41 +163,19 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
   const handleSelectCategory = (category: string) => {
     setSelectedCategory(category);
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: `Kategori terpilih: ${category}`,
-      timestamp: new Date()
-    };
-
     if (pendingQuery.current) {
       const queryText = pendingQuery.current;
       pendingQuery.current = null; // Clear pending query
 
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "ai",
-        content: `Kategori **${category}** terpilih! Menjalankan rekomendasi wisata dengan preferensi: *"${queryText}"*...`,
-        timestamp: new Date()
-      };
-
       const queryMsg: Message = {
-        id: (Date.now() + 2).toString(),
+        id: Date.now().toString(),
         role: "user",
         content: queryText,
         timestamp: new Date()
       };
 
-      setMessages((prev) => [...prev, userMsg, aiMsg, queryMsg]);
+      setMessages((prev) => [...prev, queryMsg]);
       executeSearch(queryText, category);
-    } else {
-      const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "ai",
-        content: `Kategori **${category}** telah dikonfirmasi! 🎯\n\nSekarang, silakan tuliskan preferensi wisata Anda secara bebas pada kolom di bawah ini (contoh: *"tempat bermain anak-anak yang luas"* atau *"pantai yang tidak terlalu ramai"*).`,
-        timestamp: new Date()
-      };
-      setMessages((prev) => [...prev, userMsg, aiMsg]);
     }
   };
 
@@ -259,6 +215,20 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
     }
   };
 
+  const handleResetCategory = () => {
+    if (messages.length > 1) {
+      if (confirm("Mengubah kategori akan menghapus riwayat chat saat ini. Apakah Anda yakin?")) {
+        setSelectedCategory(null);
+        setMessages([WELCOME_MESSAGE]);
+        lastProcessedQuery.current = null;
+        pendingQuery.current = null;
+        localStorage.removeItem("jabarulin_chat_history");
+      }
+    } else {
+      setSelectedCategory(null);
+    }
+  };
+
   const formatTime = (d: Date) =>
     d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
 
@@ -279,30 +249,21 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
   return (
     <section id="chatbot" className="chatbot-section">
       <div className="container">
-        <div className="section-header">
-          <div className="section-tag">
-            <Bot size={13} /> AI Assistant
-          </div>
-          <h2 className="section-title">
-            Chat dengan{" "}
-            <span className="gradient-text">Jabarulin AI</span>
-          </h2>
-          <p className="section-subtitle">
-            Gunakan bahasa natural untuk mencari destinasi wisata impianmu di Jawa Barat
-          </p>
-        </div>
-
         <div className="chat-window">
           {/* Chat Header */}
-          <div className="chat-header">
-            <div className="chat-avatar">🤖</div>
-            <div className="chat-header-info">
-              <h3>Jabarulin AI</h3>
-              <p>Asisten Wisata Cerdas Jawa Barat</p>
-            </div>
-            <div className="chat-status">
-              <span className="chat-status-dot" />
-              Online
+          <div className="chat-header" style={{ display: "flex", justifyContent: "center" }}>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              width: "100%",
+              maxWidth: "850px",
+            }}>
+              <div className="chat-avatar">🤖</div>
+              <div className="chat-header-info">
+                <h3>Jabarulin AI</h3>
+                <p>Asisten Wisata Cerdas Jawa Barat</p>
+              </div>
             </div>
           </div>
 
@@ -330,61 +291,15 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
                     </div>
                   )}
 
-                  <span className="message-time">{formatTime(msg.timestamp)}</span>
+                  <span className="message-time">
+                    {isInitialized ? formatTime(msg.timestamp) : ""}
+                  </span>
                 </div>
               </div>
             ))}
 
-            {/* Category selection grid when selectedCategory is null */}
-            {!selectedCategory && !loading && (
-              <div className="category-selection-container" style={{ margin: "1.2rem 0" }}>
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "12px",
-                  width: "100%",
-                  maxWidth: "800px",
-                  margin: "1rem auto 0"
-                }}>
-                  {CATEGORIES_LIST.map((cat) => (
-                    <button
-                      key={cat.name}
-                      onClick={() => handleSelectCategory(cat.name)}
-                      className="category-select-btn"
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        padding: "14px",
-                        background: "rgba(30, 41, 59, 0.7)",
-                        border: "1px solid rgba(148, 163, 184, 0.2)",
-                        borderRadius: "12px",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "rgba(59, 130, 246, 0.15)";
-                        e.currentTarget.style.borderColor = "var(--blue-500)";
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "rgba(30, 41, 59, 0.7)";
-                        e.currentTarget.style.borderColor = "rgba(148, 163, 184, 0.2)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }}
-                    >
-                      <span style={{ fontSize: "1.8rem", marginBottom: "4px" }}>{cat.emoji}</span>
-                      <strong style={{ color: "white", fontSize: "0.95rem" }}>{cat.name}</strong>
-                      <span style={{ fontSize: "0.78rem", color: "var(--slate-400)", marginTop: "4px", lineHeight: "1.3" }}>{cat.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Contextual Quick Suggestions based on chosen category */}
-            {selectedCategory && messages.length <= 4 && !loading && (
+            {isInitialized && selectedCategory && messages.length <= 4 && !loading && (
               <div className="chat-empty" style={{ padding: "0.8rem 0" }}>
                 <p>Mulai dengan klik salah satu saran di bawah atau tulis sendiri:</p>
                 <div className="quick-suggestions">
@@ -439,18 +354,18 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
                   id="chat-text-input"
                   className="chat-input"
                   rows={1}
-                  placeholder={selectedCategory ? "Ceritakan wisata impianmu... (Enter untuk kirim)" : "Pilih kategori wisata terlebih dahulu di atas..."}
+                  placeholder={isInitialized && selectedCategory ? "Ceritakan wisata impianmu... (Enter untuk kirim)" : "Pilih kategori wisata terlebih dahulu di atas..."}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  disabled={loading || !selectedCategory}
+                  disabled={!isInitialized || loading || !selectedCategory}
                 />
               </div>
               <button
                 id="chat-send-btn"
                 className="chat-send-btn"
                 onClick={() => sendMessage()}
-                disabled={loading || !input.trim() || !selectedCategory}
+                disabled={!isInitialized || loading || !input.trim() || !selectedCategory}
                 aria-label="Kirim pesan"
               >
                 {loading ? (
@@ -462,7 +377,7 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
             </div>
             <div className="chat-input-footer">
               <span className="chat-input-hint">
-                {selectedCategory ? (
+                {isInitialized && selectedCategory ? (
                   <span>
                     Kategori aktif: <strong style={{ color: "var(--blue-400)" }}>{selectedCategory}</strong>
                   </span>
@@ -474,21 +389,10 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
                 )}
               </span>
               <div style={{ display: "flex", gap: "8px" }}>
-                {selectedCategory && (
+                {isInitialized && selectedCategory && (
                   <button
                     className="chat-clear-btn"
-                    onClick={() => {
-                      setSelectedCategory(null);
-                      setMessages(prev => [
-                        ...prev,
-                        {
-                          id: "reset-" + Date.now(),
-                          role: "ai",
-                          content: "Silakan pilih kategori wisata baru dari pilihan di bawah:",
-                          timestamp: new Date()
-                        }
-                      ]);
-                    }}
+                    onClick={handleResetCategory}
                     style={{ color: "var(--amber-400)", display: "flex", alignItems: "center", gap: 3 }}
                   >
                     🔄 Ganti Kategori
@@ -502,6 +406,93 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
           </div>
         </div>
       </div>
+
+      {/* Category Selection Popup Modal Overlay */}
+      {isInitialized && !selectedCategory && (
+        <div
+          className="category-modal-overlay"
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            background: "rgba(15, 23, 42, 0.4)", // Dark slate semi-transparent overlay
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 99999,
+            padding: "1.5rem",
+            animation: "fadeIn 0.25s ease both",
+          }}
+        >
+          <div
+            className="category-modal-card"
+            style={{
+              width: "100%",
+              maxWidth: "850px",
+              background: "white",
+              borderRadius: "24px",
+              border: "1px solid var(--blue-100)",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.15)",
+              padding: "2.5rem 2rem",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "2rem",
+              animation: "scaleIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both"
+            }}
+          >
+            <div className="section-header" style={{ textAlign: "center", marginBottom: "0rem" }}>
+              <div className="section-tag" style={{ marginBottom: "0.75rem", display: "inline-flex" }}>🏷️ Kategori</div>
+              <h2 className="section-title" style={{ fontSize: "2rem", fontWeight: 800, margin: "0.5rem 0", color: "var(--slate-900)" }}>
+                Jelajahi Berdasarkan <span className="gradient-text">Minatmu</span>
+              </h2>
+              <p className="section-subtitle" style={{ fontSize: "0.95rem", color: "var(--slate-500)", margin: "0 auto", maxWidth: "520px" }}>
+                Pilih kategori wisata favoritmu dan AI akan langsung merekomendasikan destinasi terbaik
+              </p>
+            </div>
+
+            <div className="category-grid" style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: "16px",
+              width: "100%",
+              maxWidth: "100%"
+            }}>
+              {CATEGORIES_LIST.map((cat) => (
+                <button
+                  key={cat.name}
+                  onClick={() => handleSelectCategory(cat.name)}
+                  className="category-card"
+                  id={`cat-${cat.name.replace(/\s/g, "-")}`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "24px 16px",
+                    background: "white",
+                    border: "1.5px solid var(--blue-100)",
+                    borderRadius: "16px",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    width: "100%",
+                    fontFamily: "inherit",
+                    color: "inherit",
+                    outline: "none"
+                  }}
+                >
+                  <div className="category-emoji" style={{ fontSize: "2.2rem", marginBottom: "8px" }}>{cat.emoji}</div>
+                  <div className="category-name" style={{ fontSize: "0.95rem", fontWeight: "700", color: "var(--slate-700)" }}>{cat.name}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -544,6 +535,25 @@ function DestinationCard({ dest }: { dest: DestinationItem }) {
         </div>
       )}
 
+      {dest.reviews && dest.reviews.length > 0 && (
+        <div className="chat-dest-reviews-list" style={{ marginTop: '8px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {dest.reviews.map((rev, idx) => (
+            <div key={idx} style={{
+              fontSize: '0.82rem',
+              color: '#0f172a',
+              background: 'rgba(15, 23, 42, 0.05)',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              borderLeft: '3px solid var(--blue-500)',
+              lineHeight: '1.45',
+              fontStyle: 'italic'
+            }}>
+              "{rev}"
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="chat-dest-actions">
         {dest.google_maps_url ? (
           <a
@@ -571,9 +581,11 @@ function DestinationCard({ dest }: { dest: DestinationItem }) {
           </span>
         )}
 
-        <span className="chat-dest-score">
+        <span className="chat-dest-score" title={`Raw Score: ${dest.final_score.toFixed(3)}`}>
           <BarChart3 size={11} />
-          {(dest.final_score * 100).toFixed(0)}%
+          {dest.final_score > 0 
+            ? `${Math.min(Math.round(dest.final_score * 200), 99)}% Match`
+            : "95% Match"}
         </span>
       </div>
     </div>

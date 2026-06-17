@@ -1,8 +1,9 @@
 "use client";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import ChatBot from "@/components/ChatBot";
-import CategoryFilter from "@/components/CategoryFilter";
+import dynamic from "next/dynamic";
+
+const ChatBot = dynamic(() => import("@/components/ChatBot"), { ssr: false });
 
 function ChatPageInner() {
   const searchParams = useSearchParams();
@@ -11,10 +12,7 @@ function ChatPageInner() {
   const initialCategory = searchParams.get("cat") ?? undefined;
 
   return (
-    <>
-      <ChatBot initialQuery={initialQuery} initialCategory={initialCategory} />
-      <CategoryFilter />
-    </>
+    <ChatBot initialQuery={initialQuery} initialCategory={initialCategory} />
   );
 }
 
