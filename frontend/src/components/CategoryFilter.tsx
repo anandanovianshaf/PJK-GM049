@@ -2,14 +2,14 @@
 import { useRouter } from "next/navigation";
 
 const CATEGORIES = [
-  { name: "Wisata Alam", categoryName: "Wisata Alam", count: "2.4K destinasi", emoji: "🏔️" },
-  { name: "Pantai", categoryName: "Pantai", count: "850 destinasi", emoji: "🏖️" },
-  { name: "Camping", categoryName: "Camping", count: "460 destinasi", emoji: "🏕️" },
-  { name: "Keluarga", categoryName: "Keluarga", count: "1.2K destinasi", emoji: "👨‍👩‍👧" },
-  { name: "Adventure", categoryName: "Adventure", count: "420 destinasi", emoji: "🚵" },
-  { name: "Fotografi", categoryName: "Fotografi", count: "390 destinasi", emoji: "📸" },
-  { name: "Healing", categoryName: "Healing", count: "510 destinasi", emoji: "💆" },
-  { name: "Lainnya", categoryName: "Lainnya", count: "1.1K destinasi", emoji: "🏨" },
+  { name: "Wisata Alam", categoryName: "Wisata Alam", emoji: "🏔️" },
+  { name: "Pantai", categoryName: "Pantai", emoji: "🏖️" },
+  { name: "Camping", categoryName: "Camping", emoji: "🏕️" },
+  { name: "Keluarga", categoryName: "Keluarga", emoji: "👨‍👩‍👧" },
+  { name: "Adventure", categoryName: "Adventure", emoji: "🚵" },
+  { name: "Fotografi", categoryName: "Fotografi", emoji: "📸" },
+  { name: "Healing", categoryName: "Healing", emoji: "💆" },
+  { name: "Lainnya", categoryName: "Lainnya", emoji: "🏨" },
 ];
 
 export default function CategoryFilter() {
@@ -42,7 +42,6 @@ export default function CategoryFilter() {
             >
               <div className="category-emoji">{cat.emoji}</div>
               <div className="category-name">{cat.name}</div>
-              <div className="category-count">{cat.count}</div>
             </div>
           ))}
         </div>

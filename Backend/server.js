@@ -21,6 +21,11 @@ app.use(passport.initialize());
 app.use('/api/auth', authRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'success', message: 'Jabarulin AI Backend is running' });
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'success', message: 'Jabarulin AI Backend is running' });
@@ -49,7 +54,12 @@ mongoose.connect(process.env.MONGO_URI)
     // process.exit(1); // Jangan exit agar server tetap menyala walau db mati
   })
   .finally(() => {
-    app.listen(PORT, () => {
-      console.log(`Server berjalan di port ${PORT}`);
-    });
+    // Jalankan server jika tidak dideploy sebagai serverless function (misal di Vercel)
+    if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+      app.listen(PORT, () => {
+        console.log(`Server berjalan di port ${PORT}`);
+      });
+    }
   });
+
+module.exports = app;

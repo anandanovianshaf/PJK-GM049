@@ -14,6 +14,7 @@ export interface DestinationItem {
     duration_mins: number;
     traffic_condition: string;
   } | null;
+  reviews?: string[];
 }
 
 export interface RecommendationResponse {
@@ -50,6 +51,7 @@ export const fetchRecommendations = async (
       prompt,
       kategori,
       user_location: userLocation,
+      top_n,
     }),
   });
 
@@ -67,24 +69,62 @@ export const fetchRecommendations = async (
   } : null;
 
   const destinasi = data.destinasi;
+  const fallbackName = (destinasi?.nama_tempat || '').trim();
+  const fallbackMapsUrl = fallbackName
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${fallbackName}, Jawa Barat`)}`
+    : destinasi?.lokasi
+      ? `https://www.google.com/maps/search/?api=1&query=${destinasi.lokasi.lat},${destinasi.lokasi.lng}`
+      : null;
   const mappedDestination: DestinationItem = {
     name: destinasi?.nama_tempat || '',
     rating: destinasi?.rating || null,
     category: kategori,
     address: '',
     total_reviews: null,
-    google_maps_url: destinasi?.lokasi
-      ? `https://www.google.com/maps?q=${destinasi.lokasi.lat},${destinasi.lokasi.lng}`
-      : null,
+    google_maps_url: fallbackMapsUrl,
     website: null,
     final_score: 0,
     distance_info,
+    reviews: [],
   };
+
+  const rawResults = Array.isArray(data.raw_data) ? data.raw_data : [];
+  const mappedDestinations: DestinationItem[] = rawResults.map((item: any) => {
+    const isTop = item.name?.toLowerCase() === destinasi?.nama_tempat?.toLowerCase();
+
+    // Build a reliable Google Maps search URL using the destination name
+    // Format: /maps/search/?api=1&query=Name+Jawa+Barat (always works)
+    const itemName = (item.name || '').trim();
+    let mapsUrl: string | null = null;
+    if (itemName) {
+      const searchQuery = encodeURIComponent(`${itemName}, Jawa Barat`);
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${searchQuery}`;
+    } else if (isTop && destinasi?.lokasi) {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${destinasi.lokasi.lat},${destinasi.lokasi.lng}`;
+    }
+
+    return {
+      name: item.name || '',
+      rating: item.rating || null,
+      category: item.category || kategori,
+      address: item.address || '',
+      total_reviews: item.total_reviews || null,
+      google_maps_url: mapsUrl,
+      website: item.website || null,
+      final_score: item.final_score || 0,
+      distance_info: isTop ? distance_info : null,
+      reviews: item.reviews || [],
+    };
+  });
+
+  if (mappedDestinations.length === 0 && destinasi?.nama_tempat) {
+    mappedDestinations.push(mappedDestination);
+  }
 
   return {
     status: data.status,
     reply: data.pesan_ai,
-    raw_data: [mappedDestination],
+    raw_data: mappedDestinations,
     rute_dan_lalu_lintas: rute,
   };
 };

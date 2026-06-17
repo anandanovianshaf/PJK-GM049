@@ -1,8 +1,15 @@
 "use client";
+import { usePathname } from "next/navigation";
 import { MapPin } from "lucide-react";
 import Link from "next/link";
 
 export default function Footer() {
+  const pathname = usePathname();
+  
+  if (pathname === "/chat") {
+    return null;
+  }
+
   return (
     <footer className="footer">
       <div className="footer-grid">
