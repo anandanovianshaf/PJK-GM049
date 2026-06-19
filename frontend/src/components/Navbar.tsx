@@ -32,11 +32,11 @@ export default function Navbar() {
       <div className="navbar-inner">
         {/* Logo */}
         <Link href="/" className="navbar-logo" style={{ textDecoration: "none" }}>
-          <div className="navbar-logo-icon">
+          {/* <div className="navbar-logo-icon">
             <MapPin size={18} />
-          </div>
+          </div> */}
           <span className="navbar-logo-text">
-            JabarUlin <span>AI</span>
+            Jabarulin <span>AI</span>
           </span>
         </Link>
 

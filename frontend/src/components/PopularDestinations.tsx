@@ -76,9 +76,6 @@ export default function PopularDestinations() {
   return (
     <section id="destinations" className="destinations-section">
       <div className="section-header">
-        <div className="section-tag">
-          <Star size={13} /> Destinasi Populer
-        </div>
         <h2 className="section-title">
           Wisata <span className="gradient-text">Terfavorit</span> di Jawa Barat
         </h2>

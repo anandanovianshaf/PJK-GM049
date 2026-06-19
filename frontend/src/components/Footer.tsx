@@ -74,7 +74,7 @@ export default function Footer() {
       {/* Bottom Bar */}
       <div className="footer-bottom">
         <p>
-          © 2025 JabarUlin AI. Dibuat untuk wisatawan Jawa Barat.
+          © 2026 JabarUlin AI. Dibuat untuk wisatawan Jawa Barat.
         </p>
       </div>
     </footer>

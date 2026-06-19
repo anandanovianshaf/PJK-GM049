@@ -259,9 +259,8 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
               width: "100%",
               maxWidth: "850px",
             }}>
-              <div className="chat-avatar">🤖</div>
               <div className="chat-header-info">
-                <h3>Jabarulin AI</h3>
+                <h3><strong>Jabarulin AI</strong></h3>
                 <p>Asisten Wisata Cerdas Jawa Barat</p>
               </div>
             </div>
@@ -395,7 +394,7 @@ export default function ChatBot({ initialQuery, initialCategory }: ChatBotProps)
                     onClick={handleResetCategory}
                     style={{ color: "var(--amber-400)", display: "flex", alignItems: "center", gap: 3 }}
                   >
-                    🔄 Ganti Kategori
+                    Ganti Kategori
                   </button>
                 )}
                 <button className="chat-clear-btn" onClick={clearChat} id="chat-clear-btn">

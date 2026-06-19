@@ -356,7 +356,7 @@ export default function OnboardingModal() {
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-start" }}>
                   <div style={{ background: "white", color: "#334155", padding: "10px 16px", borderRadius: "18px 18px 18px 2px", fontSize: "0.88rem", border: "1px solid #e2e8f0", maxWidth: "85%", textAlign: "left" }}>
-                    ✨ Rekomendasi wisata ramah anak & keluarga: **Lembang Park Zoo**
+                    Rekomendasi wisata ramah anak & keluarga: **Lembang Park Zoo**
                   </div>
                 </div>
 

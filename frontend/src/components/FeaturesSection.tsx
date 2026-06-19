@@ -9,7 +9,7 @@ const FEATURES = [
   },
   {
     icon: <MapPin size={22} />,
-    title: "10.000+ Destinasi",
+    title: "274+ Destinasi",
     desc: "Database lengkap destinasi wisata Jawa Barat dengan informasi real-time: rating, ulasan, alamat, dan kontak yang selalu diperbarui.",
   },
   {
@@ -39,7 +39,6 @@ export default function FeaturesSection() {
     <section id="features" className="features-section">
       <div className="container">
         <div className="section-header">
-          <div className="section-tag">✨ Keunggulan</div>
           <h2 className="section-title">
             Mengapa <span className="gradient-text">JabarUlin AI</span>?
           </h2>

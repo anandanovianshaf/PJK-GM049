@@ -24,8 +24,7 @@ export default function HeroSection() {
         {/* Left — Content */}
         <div>
           <div className="hero-badge">
-            <span className="hero-badge-dot" />
-            🤖 Powered by IndoBERT + Gemini AI
+            Powered by IndoBERT + Gemini AI
           </div>
 
           <h1 className="hero-title">
@@ -112,12 +111,10 @@ export default function HeroSection() {
           <div className="hero-chat-preview">
             {/* Chat Header */}
             <div className="hero-chat-header">
-              <div className="hero-chat-header-avatar">🤖</div>
               <div className="hero-chat-header-info">
                 <h4>Jabarulin AI</h4>
                 <span>Asisten Wisata Jawa Barat</span>
               </div>
-              <div className="hero-chat-header-status" />
             </div>
 
             {/* Chat Body */}
@@ -127,7 +124,7 @@ export default function HeroSection() {
               </div>
 
               <div className="hero-bubble hero-bubble-ai">
-                ✨ Siap! Berikut destinasi wisata ramah anak dan keluarga terbaik di Jawa Barat yang cocok buat kamu:
+                Siap! Berikut destinasi wisata ramah anak dan keluarga terbaik di Jawa Barat yang cocok buat kamu:
               </div>
 
               {PREVIEW_DESTINATIONS.map((d, i) => (
@@ -164,7 +161,7 @@ export default function HeroSection() {
             fontWeight: 600,
             color: "var(--slate-700)",
           }}>
-            <span style={{ fontSize: "1.2rem" }}>🧠</span>
+            <span style={{ fontSize: "1.2rem" }}></span>
             IndoBERT + TF-IDF
           </div>
         </div>

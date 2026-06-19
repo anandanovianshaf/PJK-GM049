@@ -37,7 +37,7 @@ export default function TentangPage() {
       }}>
         <div className="container" style={{ maxWidth: 720, margin: "0 auto" }}>
           <div className="section-tag" style={{ display: "inline-flex", marginBottom: "1rem" }}>
-            ✨ Tentang Kami
+            Tentang Kami
           </div>
           <h1 className="section-title">
             Tentang <span className="gradient-text">JabarUlin AI</span>
@@ -54,9 +54,9 @@ export default function TentangPage() {
       <section style={{ padding: "3rem 1.5rem", background: "white" }}>
         <div className="container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1.5rem", maxWidth: 900, margin: "0 auto" }}>
           {[
-            { icon: <Brain size={28} />, label: "Model AI", value: "IndoBERT v3.0" },
+            { icon: <Brain size={28} />, label: "Model AI", value: "IndoBERT" },
             { icon: <Target size={28} />, label: "Akurasi", value: "96.49%" },
-            { icon: <Zap size={28} />, label: "Destinasi", value: "274 Unik" },
+            { icon: <Zap size={28} />, label: "Destinasi", value: "274" },
             { icon: <Users size={28} />, label: "Tim", value: "5 Anggota" },
           ].map((s) => (
             <div key={s.label} style={{
@@ -78,7 +78,7 @@ export default function TentangPage() {
       <section style={{ padding: "4rem 1.5rem", background: "var(--slate-50)" }}>
         <div className="container">
           <div className="section-header">
-            <div className="section-tag">👥 Tim Pengembang</div>
+            <div className="section-tag">Tim Pengembang</div>
             <h2 className="section-title">Pembagian <span className="gradient-text">Tugas Tim</span></h2>
             <p className="section-subtitle">Proyek ini dikerjakan secara kolaboratif oleh 5 anggota tim pengembang</p>
           </div>
@@ -103,7 +103,6 @@ export default function TentangPage() {
       <section style={{ padding: "4rem 1.5rem", background: "white" }}>
         <div className="container">
           <div className="section-header">
-            <div className="section-tag">⚙️ Teknologi</div>
             <h2 className="section-title">Tech <span className="gradient-text">Stack</span></h2>
             <p className="section-subtitle">Tumpukan teknologi modern yang digunakan dalam project ini</p>
           </div>
